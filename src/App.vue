@@ -1,52 +1,154 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { ref, onMounted } from 'vue'
+import { darkTheme, zhCN, dateZhCN } from 'naive-ui'
+import { getBaseList, listenSyncMany, listenStartLoading, listenEndLoading, getTranslationUnconfirmed, getTranslationPack, loadSaveMetaData } from './api/tauriFunc';
+import { invoke } from '@tauri-apps/api/core'
 
-const greetMsg = ref("");
-const name = ref("");
+import { DateTime } from "luxon";
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
+import Header from './components/header/Main.vue';
+import LoadingModal from './components/Loading.vue';
+import Footer from './components/footer/Footer.vue';
+import MainContext from './components/main/MainContext.vue';
+import { SaveMetaData } from './api/types';
+import { useBaseListStore, useInitdStore } from './components/utils/store';
+
+const baseListStore = useBaseListStore()
+const initd = useInitdStore()
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const init = async (useAutoSave: boolean) => {
+
+  console.log('command started_mission, useAutoSave:', useAutoSave)
+  console.time('init_mission')
+
+  await invoke('init_mission', {loadFromAutosave: useAutoSave})
+
+  initd.$patch({ inited: true })
+
+  console.log('command getBaseList')
+  // 只在这里拿一次全量数据，剩下的全部交给 sync many
+  getBaseList().then((res) => {
+    console.log('BaseList first sync',res)
+    baseListStore.$patch(res)
+
+    listenSyncMany((msg) => {
+      console.log("received sync many", msg)
+      baseListStore.handleSyncManyPayload(msg.payload)
+    })
+
+  console.timeEnd('init_mission')
+  })
 }
+
+const selectSaveModal = ref(false)
+const saveMetaData = ref<[SaveMetaData | null, SaveMetaData | null]>([null, null])
+
+onMounted(async () => {
+  console.log('App mounted!')
+  console.time('App mounted')
+  listenStartLoading((msg) => {
+    loading.value = true
+    loadingContext.value = msg.payload
+  })
+  listenEndLoading(() => {
+    loading.value = false
+  })
+  await sleep(100)
+  saveMetaData.value = await loadSaveMetaData()
+  console.log('saveMetaData', saveMetaData.value)
+  let useAutoSave = false
+  if (saveMetaData.value[1] && !saveMetaData.value[0]) {
+    useAutoSave = true
+    init(useAutoSave)
+  } else if (saveMetaData.value[1] && saveMetaData.value[0]) {
+    if (DateTime.fromISO(saveMetaData.value[1].save_time) > (DateTime.fromISO(saveMetaData.value[0].save_time))) {
+      selectSaveModal.value = true
+    } else {
+      init(useAutoSave)
+    }
+  } else {
+    init(useAutoSave)
+  }
+  console.timeEnd('App mounted')
+})
+
+const handleSelectSave = (useAutoSave: boolean) => {
+  selectSaveModal.value = false
+  init(useAutoSave)
+}
+
+const loading = ref(false)
+const loadingContext = ref('')
+
+import hljs from 'highlight.js/lib/core'
+
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
-
-    <div class="row">
-      <a href="https://vitejs.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
-
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+  <n-config-provider :theme="darkTheme" :locale="zhCN" :date-locale="dateZhCN" :hljs="hljs">
+    <n-message-provider :max="3">
+      <n-modal-provider>
+        <div id="teleported">
+          <!-- 这个div是用来给我自己写的几个Teleport做终点的，不然传送到body上吃不到config -->
+        </div>
+        <n-layout>
+          <n-layout-header style="height: 34px;">
+            <Header/>
+          </n-layout-header>
+          <n-layout-content content-style="padding: 0 6px; height: calc(100vh - 68px);">
+            <MainContext />
+          </n-layout-content>
+          <n-layout-footer style="height: 34px;">
+            <Footer />
+          </n-layout-footer>
+        </n-layout>
+        <LoadingModal :show="loading" :context="loadingContext" />
+        <n-modal 
+          :show="selectSaveModal"
+          title="发现了更新的自动存档，可能是上次应用没有正常关闭？"
+          preset="card"
+          style="width: 600px;"
+        >
+        <n-flex vertical>
+        <n-card class="save-card" @click="handleSelectSave(true)">
+          <n-descriptions label-placement="top" title="自动存档"
+          >
+            <n-descriptions-item label="保存时间">
+              {{ DateTime.fromISO(saveMetaData[1]!.save_time).setLocale('zh-cn').toRelative() }}
+              ({{ DateTime.fromISO(saveMetaData[1]!.save_time).setLocale('zh-cn').toLocaleString(DateTime.DATETIME_MED_WITH_SECONDS) }})
+            </n-descriptions-item>
+            <n-descriptions-item label="mod数量">{{ saveMetaData[1]?.mods_count }}</n-descriptions-item>
+          </n-descriptions>
+        </n-card>
+        <n-card class="save-card" @click="handleSelectSave(false)">
+          <n-descriptions label-placement="top" title="手动存档"
+          >
+            <n-descriptions-item label="保存时间">
+              {{ DateTime.fromISO(saveMetaData[0]!.save_time).setLocale('zh-cn').toRelative() }}
+              ({{ DateTime.fromISO(saveMetaData[0]!.save_time).setLocale('zh-cn').toLocaleString(DateTime.DATETIME_MED_WITH_SECONDS) }})
+            </n-descriptions-item>
+            <n-descriptions-item label="mod数量">{{ saveMetaData[0]?.mods_count }}</n-descriptions-item>
+          </n-descriptions>
+        </n-card>
+      </n-flex>
+        </n-modal>
+      </n-modal-provider>
+    </n-message-provider>
+  </n-config-provider>
 </template>
 
 <style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
+.save-card {
+    transition: background-color 0.1s ease;
 }
 
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
+.save-card:hover {
+    background-color: #394753;
 }
-
 </style>
-<style>
+<!-- <style>
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
@@ -123,6 +225,7 @@ button {
 button:hover {
   border-color: #396cd8;
 }
+
 button:active {
   border-color: #396cd8;
   background-color: #e8e8e8;
@@ -152,9 +255,9 @@ button {
     color: #ffffff;
     background-color: #0f0f0f98;
   }
+
   button:active {
     background-color: #0f0f0f69;
   }
 }
-
-</style>
+</style> -->

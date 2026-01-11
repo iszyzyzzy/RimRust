@@ -5,14 +5,48 @@ import { dirname } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
 import vue from "@vitejs/plugin-vue";
+import AutoImport from 'unplugin-auto-import/vite'
+import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
+import Components from 'unplugin-vue-components/vite'
+import vueDevTools from 'vite-plugin-vue-devtools'
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    vueDevTools(),
+    AutoImport({
+      imports: [
+        'vue',
+        {
+          'naive-ui': [
+            'useDialog',
+            'useMessage',
+            'useNotification',
+            'useLoadingBar'
+          ]
+        }
+      ]
+    }),
+    Components({
+      resolvers: [NaiveUiResolver()]
+    })
+  ],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, './src'),
+      '@assets': resolve(__dirname, './src/assets'),
+      '@api': resolve(__dirname, './src/api'),
+      '@components': resolve(__dirname, './src/components'),
+      '@utils': resolve(__dirname, './src/components/utils'),
+      '@store': resolve(__dirname, './src/components/utils/store'),
+    }
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -39,7 +73,6 @@ export default defineConfig(async () => ({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        loading: resolve(__dirname, 'full_loading_screen/index.html'),
       }
     }
   }
