@@ -1,8 +1,8 @@
-use super::*;
+// use super::*;
 
 use ahash::{HashMap, HashMapExt};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 #[derive(
@@ -113,8 +113,8 @@ impl Default for PackageId {
     }
 }
 impl PackageId {
-    pub fn _new() -> Self {
-        Self("".to_string())
+    pub fn new(package_id: impl Into<String>) -> Self {
+        Self(package_id.into())
     }
     pub fn _to_lowercase(&self) -> Self {
         Self(self.0.to_lowercase())
@@ -232,6 +232,10 @@ impl Version {
         // 剩下的不管啦
         true
     }
+
+    pub fn to_string(&self) -> String {
+        self.0.clone()
+    }
 }
 
 #[derive(
@@ -315,25 +319,25 @@ pub fn next_sync_id() -> usize {
 }
 
 
-/// 用于序列化xml的<li>标签的辅助结构
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename = "li", transparent)]
-pub struct Li<T>(pub T);
+// /// 用于序列化xml的<li>标签的辅助结构
+// #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+// #[serde(rename = "li", transparent)]
+// pub struct Li<T>(pub T);
 
-impl<T> Li<T> {
-    pub fn new(value: T) -> Self {
-        Self(value)
-    }
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-    pub fn into_vec(vec: Vec<Self>) -> Vec<T> {
-        vec.into_iter().map(|li| li.0).collect()
-    }
-}
+// impl<T> Li<T> {
+//     pub fn new(value: T) -> Self {
+//         Self(value)
+//     }
+//     pub fn into_inner(self) -> T {
+//         self.0
+//     }
+//     pub fn into_vec(vec: Vec<Self>) -> Vec<T> {
+//         vec.into_iter().map(|li| li.0).collect()
+//     }
+// }
 
-impl<T> From<T> for Li<T> {
-    fn from(value: T) -> Self {
-        Self(value)
-    }
-}
+// impl<T> From<T> for Li<T> {
+//     fn from(value: T) -> Self {
+//         Self(value)
+//     }
+// }

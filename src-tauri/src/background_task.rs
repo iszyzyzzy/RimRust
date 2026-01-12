@@ -77,8 +77,8 @@ impl TaskManager {
             .expect("Failed to create task manager runtime");
         let runtime = Arc::new(runtime);
 
-        let (sender, mut receiver) = mpsc::channel::<Task>(10000);
-        let (status_tx, mut status_rx) = mpsc::channel::<TaskStatusUpdate>(10000);
+        let (sender, mut receiver) = mpsc::channel::<Task>(50000);
+        let (status_tx, mut status_rx) = mpsc::channel::<TaskStatusUpdate>(50000);
         let app = Arc::new(app);
         let app_clone = app.clone();
         let running_tasks: Arc<DashMap<String, broadcast::Sender<()>>> = Arc::new(DashMap::new());

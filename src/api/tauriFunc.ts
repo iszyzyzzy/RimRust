@@ -213,7 +213,7 @@ export async function searchMods(searchText: string, searchField: string[]): Pro
 
 // steamDB数据
 export async function getSteamDBDataByPackageId(packageId: string): Promise<SteamDatabase[]> {
-  return await invoke('steam_db_get_data_by_package_id', { packageId });
+  return await invoke('steamdb_get_by_package_id', { packageId });
 }
 
 export async function autoTranslate(text: string,from: string,to: string): Promise<TranslateResponse> {

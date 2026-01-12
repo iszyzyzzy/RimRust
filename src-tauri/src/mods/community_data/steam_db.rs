@@ -174,10 +174,10 @@ pub struct Database {
     appid: Option<bool>,
     url: Option<String>,
     package_id: Option<String>,
+    packageid: Option<String>, // 兼容泰南的神奇代码
     name: Option<String>,
-    authors: Option<Authors>,
-    game_versions: Option<Authors>,
-    packageid: Option<String>,
+    authors: Option<String>,
+    game_versions: Option<Vec<Option<String>>>,
     steam_name: Option<String>,
     dependencies: Option<HashMap<String, Vec<String>>>,
     unpublished: Option<bool>,
@@ -209,36 +209,17 @@ impl Database {
     }
     pub fn get_authors(&self) -> Option<String> {
         if let Some(data) = self.authors.clone() {
-            match data {
-                Authors::String(data) => Some(data),
-                Authors::StringArray(data) => Some(data.join(", ")),
-            }
+            Some(data)
         } else {
             None
         }
     }
     pub fn get_game_versions(&self) -> Option<Vec<String>> {
         if let Some(data) = self.game_versions.clone() {
-            match data {
-                Authors::String(data) => Some(vec![data]),
-                Authors::StringArray(data) => Some(data),
-            }
+            Some(data.into_iter().filter_map(|x| x).collect())
         } else {
             None
         }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, bincode::Decode, bincode::Encode)]
-#[serde(untagged)]
-pub enum Authors {
-    String(String),
-    StringArray(Vec<String>),
-}
-
-impl Default for Authors {
-    fn default() -> Self {
-        Authors::String("Default Author".to_string())
     }
 }
 
