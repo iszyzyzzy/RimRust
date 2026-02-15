@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useBaseListStore, useDragStore } from "../utils/store";
+import { openUrl } from '@tauri-apps/plugin-opener';
+
+import { useBaseListStore, useDragStore, useSelectMod } from "../utils/store";
 import { Id, ModInner } from "../../api/types";
 import InfoCard from "./InfoCard.vue";
 import ModList from "./list/ModList.vue";
@@ -14,14 +16,18 @@ import { DragCrossListPayload, DragEndPayload } from "../utils/components/Virtua
 
 const baseListStore = useBaseListStore();
 const dragStore = useDragStore();
-
-const selectedMod = ref<ModInner | null>(null);
+const selectModStore = useSelectMod();
+const selectedModId = ref<Id | null>(null);
+const selectedMod = computed({
+    get: () => selectedModId.value ? baseListStore.getModById(selectedModId.value) : null,
+    set: (val) => { selectedModId.value = val?.id || null; }
+});
 const highlightPattern = ref<string[]>([]);
 
 const historyRef = ref<HistoryInst | null>(null);
 
 const handleSelect = (id: Id) => {
-    selectedMod.value = baseListStore.getModById(id);
+    selectedModId.value = id;
     historyRef.value?.pushHistory(id);
 };
 
@@ -59,6 +65,12 @@ const onDragCrossList = (payload: DragCrossListPayload) => {
 const onDragEnd = (payload: DragEndPayload) => {
     handleDragEnd(payload, dragStore, baseListStore);
 }
+
+selectModStore.$subscribe((_, state) => {
+    if (state.mod_id !== null) {
+        handleSelect(state.mod_id);
+    }
+});
 
 </script>
 
@@ -105,7 +117,7 @@ const onDragEnd = (payload: DragEndPayload) => {
         <n-gi :span="3">
             <n-flex justify="end" align="center" style="height: 36px; padding: 0">
                 <n-button size="small" secondary>按钮1</n-button>
-                <n-button size="small" secondary>按钮2</n-button>
+                <n-button size="small" secondary @click="openUrl('steam://rungameid/294100')">启动游戏</n-button>
                 <n-button size="small" secondary>按钮3</n-button>
             </n-flex>
         </n-gi>

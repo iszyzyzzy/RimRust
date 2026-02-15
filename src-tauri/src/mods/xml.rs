@@ -120,12 +120,14 @@ impl BaseList {
             let mod_ = item.value();
             let mut mod_ = mod_.lock().await;
             if set.contains(&mod_.package_id) {
-                mod_.enabled = true;
+                mod_.change(ModChange::Enabled(true));
                 set.remove(&mod_.package_id);
             } else {
-                mod_.enabled = false;
+                mod_.change(ModChange::Enabled(false));
             }
         }
+        // TODO像前端回报无法匹配的mod
+        info!("加载完成，剩余未匹配的package_id: {:?}", set);
         Ok(())
     }
     pub async fn save_to_xml(

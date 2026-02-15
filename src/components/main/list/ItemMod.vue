@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { NFlex, useMessage, useModal, useThemeVars } from 'naive-ui';
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
+import { NFlex, useMessage, useModal } from 'naive-ui';
+import {ErrorOutlineRound, WarningAmberRound } from '@vicons/material'
+
 import { ModInner, Id, SortWarning, SortError } from '../../../api/types';
 import cHighlight from '../../utils/components/Highlight.vue';
-import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
+import ErrorInfo from './EnableModList/ErrorInfo.vue';
+import WarningInfo from './EnableModList/WarningInfo.vue';
 
 const props = defineProps<{
     item: ModInner
@@ -225,6 +229,15 @@ const textColorStyle = computed(() => {
     return props.textColor ? { color: props.textColor } : { color: 'var(--text-color-2)' };
 });
 
+const statusTag = computed(() => {
+    if (props.error && props.error.length > 0) {
+        return 'error'
+    } else if (props.warning && props.warning.length > 0) {
+        return 'warning'
+    }
+    return null
+})
+
 </script>
 
 <template>
@@ -267,6 +280,33 @@ const textColorStyle = computed(() => {
                     class="highlight-tag">
                     {{ tabMap[tag] || tag }}
                 </n-tag>
+
+                <!-- 受控tag -->
+                <!-- <n-tag v-if="statusTag === 'error'" size="small" type="error">
+                    <n-icon><ErrorOutlineRound /></n-icon>
+                </n-tag>
+                <n-tag v-else-if="statusTag === 'warning'" size="small" type="warning">
+                    <n-icon><WarningAmberRound /></n-icon>
+                </n-tag> -->
+                <n-popover 
+                    v-if="statusTag" trigger="hover" placement="top">
+                    <template #trigger>
+                        <n-tag size="small" :bordered="false" :type="statusTag" class="highlight-tag">
+                            <n-icon>
+                                <component :is="statusTag === 'error' ? ErrorOutlineRound : WarningAmberRound" />
+                            </n-icon>
+                        </n-tag>
+                    </template>
+
+                    <div class="popover-tags">
+                        <div v-for="(err, index) in props.error" :key="index" style="display: block; margin-bottom: 8px;">
+                            <ErrorInfo :err="err" display-quick-fix/>
+                        </div>
+                        <div v-for="(warn, index) in props.warning" :key="index" style="display: block; margin-bottom: 8px;">
+                            <WarningInfo :err="warn" display-quick-fix/>
+                        </div>
+                    </div>
+                </n-popover>
             </div>
         </div>
         <n-dropdown placement="bottom-start" trigger="manual" :x="x" :y="y" :options="dropdownOptions"

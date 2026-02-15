@@ -41,7 +41,7 @@ strsim = "0.11"
 toml = "0.8"
 parking_lot = "0.12.3"
 tracing = "0.1"
-tracing-subscriber = {version = "0.3", features = ["env-filter", "ansi", "registry"] }
+tracing-subscriber = {version = "0.3", features = ["env-filter", "ansi", "registry", "local-time"] }
 tracing-appender = "0.2"
 tracing-futures = "0.2"
 tantivy = "0.22"

@@ -3,6 +3,7 @@ use crate::types::*;
 
 use core::panic;
 use serde::{Deserialize, Serialize};
+use tracing_subscriber::field::debug;
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
@@ -99,11 +100,15 @@ impl BaseList {
         warning: &mut Vec<ModSortWarning>,
     ) -> HashMap<PackageId, Id> {
         let mut package_id_to_mod: HashMap<PackageId, Id> = HashMap::new();
+        let trans = self.translation_mod_data.lock(Priority::HIGH).await;
+        let trans_cache = trans.get_all_translation_pack();
+        drop(trans);
         for item in self.mods_map.iter() {
             let mod_data = item.lock().await;
             if !mod_data.enabled {
                 continue;
             }
+            // 扫描重复的package_id
             if let Some(exist) = package_id_to_mod.get(&mod_data.package_id) {
                 warning.push(ModSortWarning::DuplicatePackageId(
                     mod_data.package_id.clone(),
@@ -126,6 +131,17 @@ impl BaseList {
                 }
             } else {
                 package_id_to_mod.insert(mod_data.package_id.clone(), mod_data.id.clone());
+            }
+            // 扫描不支持的版本
+            if !mod_data.supported_version.contains(&game_version) {
+                // 看一眼是不是汉化包，汉化包是无所谓版本的
+                if !trans_cache.contains(&mod_data.id) {
+                    warning.push(ModSortWarning::VersionMismatch(
+                        mod_data.id.clone(),
+                        game_version.clone(),
+                        mod_data.supported_version.iter().map(|(k,_)| k.clone()).collect(),
+                    ));
+                }
             }
         }
         package_id_to_mod
@@ -228,6 +244,9 @@ impl BaseList {
                 }
             }
         }
+        let debug_data = self.community_data.get_community_rules().lock(priority).await.get(&mod_.package_id).cloned();
+        debug!(mod_id = ?mod_.id, data = ?debug_data, "社区数据");
+        //debug!(mod_id = ?mod_.id, edges_by_target = ?edges_by_target, "构建ModNode的边");
 
         let mut final_edges: Vec<ModOrder> = vec![];
         for (_, mut edges) in edges_by_target {
@@ -249,12 +268,14 @@ impl BaseList {
             }
         }
 
-        ModNode {
+        let res = ModNode {
             id: mod_.id.clone(),
             name: mod_.name.clone(),
             package_id: mod_.package_id.clone(),
             edges: final_edges,
-        }
+        };
+        debug!(mod_id = ?mod_.id, node = ?res, "构建ModNode");
+        res
     }
 
     async fn build_mod_graph(
@@ -603,6 +624,7 @@ pub enum ModSortError {
 pub enum ModSortWarning {
     ConflictingOrders(Id, Id),
     DuplicatePackageId(PackageId),
+    VersionMismatch(Id, Version, Vec<Version>), // (mod_id, game_version, supported_versions)
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { useDebounceFn } from "@vueuse/core";
 import { VirtualListProps, DragEndPayload, DragCrossListPayload } from "./VirtualListInterface"
 import { useDragStore } from "../store";
 
@@ -52,6 +53,7 @@ const updateItemPosition = (index: number, height: number) => {
   for (let i = index + 1; i < itemPositions.value.length; i++) {
     itemPositions.value[i].top += deltaHeight;
   }
+  // console.count('updateItemPosition called');
 };
 
 /// containerHeight实际上是在外部写的css表达式
@@ -78,11 +80,10 @@ const spacerHeight = computed(() => {
 const dragState = useDragStore();
 const isMouseIn = ref(false);
 
-const updateVisibleItems = () => {
-  //const startTime = performance.now();
+const updateVisibleItemsRaw = () => {
+  const startTime = performance.now();
   const itemsSlice = items.slice(startIndex.value, endIndex.value);
-
-  visibleItems.value = itemsSlice.map((item) => ({
+  let tempVisibleItems = itemsSlice.map((item) => ({
     item,
     isIndicator: false
   }));
@@ -110,7 +111,7 @@ const updateVisibleItems = () => {
     const InsertIndex = Math.max(0, Math.min(itemsSlice.length, localInsertIndex));
 
     // 4. 在本地索引处插入指示器，并确保索引在有效范围内
-    visibleItems.value.splice(InsertIndex, 0, indicatorItem);
+    tempVisibleItems.splice(InsertIndex, 0, indicatorItem);
     //console.log('updatePosition', prevItemKey, nextItemKey);
     dragState.updateTarget({
       itemType: 'mod',
@@ -119,10 +120,14 @@ const updateVisibleItems = () => {
       toIndex: globalInsertIndex - (globalInsertIndex > dragState.state.startIndex ? 1 : 0), // 如果是向后拖动，目标索引要减1
     });
   }
-  //const endTime = performance.now();
-  //console.log(`updateVisibleItems took ${endTime - startTime} ms`);
-  //console.log(visibleItems.value)
+  const endTime = performance.now();
+  // console.log(`updateVisibleItems took ${endTime - startTime} ms`);
+  // console.count('updateVisibleItems called');
+  // console.log(tempVisibleItems)
+  visibleItems.value = tempVisibleItems;
 };
+
+const updateVisibleItems = updateVisibleItemsRaw;
 
 // const reCalculateIndex = () => {
 //   currentTopIndex.value = Math.floor(scrollTop.value / itemHeight);
@@ -188,7 +193,7 @@ const onScroll = () => {
   }
   scrollTimer = window.setTimeout(() => {
     isScrolling.value = false;
-  }, 150);
+  }, 300);
 
   scrollTop.value = listContainer.value?.scrollTop || 0;
   reCalculateIndex();
@@ -237,8 +242,9 @@ onMounted(() => {
   });
 });
 
+// TODO 替换掉内层的ResizeObserver
 const slots = defineSlots<{
-  default(props: { item: ItemType, textColor?: string}): any
+  default(props: { item: ItemType, textColor?: string, itemWidth?: number}): any
 }>();
 
 const onItemMouseDown = (e: MouseEvent, item: ItemType, index: number) => {
@@ -388,6 +394,51 @@ const onMouseLeave = () => {
   updateVisibleItems();
 };
 
+const scrollToIndex = (index: number) => {
+  if (!listContainer.value) return;
+  if (index < 0 || index >= items.length) {
+    console.warn(`scrollToIdx: index ${index} out of range [0, ${items.length - 1}]`);
+    return;
+  }
+
+  const targetItemPos = itemPositions.value[index];
+  const targetTop = targetItemPos.top;
+  const targetBottom = targetTop + targetItemPos.height;
+  const viewportTop = scrollTop.value;
+  const viewportBottom = scrollTop.value + containerHeight.value;
+
+  // 判断目标项是否已在可见区域
+  if (targetTop >= viewportTop && targetBottom <= viewportBottom) {
+    return; // 已显示，不需要滚动
+  }
+
+  // 目标项在视口上方，滚到顶部
+  if (targetTop < viewportTop) {
+    listContainer.value.scrollTop = targetTop;
+  }
+  // 目标项在视口下方，滚到底部
+  else if (targetBottom > viewportBottom) {
+    listContainer.value.scrollTop = targetBottom - containerHeight.value;
+  }
+  
+  // 触发滚动事件更新视图
+  onScroll();
+};
+
+const scrollToKey = (key: ItemType[typeof keyField]) => {
+  const index = items.findIndex(item => item[keyField] === key);
+  if (index === -1) {
+    console.warn(`scrollToKey: key "${key}" not found in items`);
+    return;
+  }
+  scrollToIndex(index);
+};
+
+defineExpose({
+  scrollToIndex,
+  scrollToKey,
+});
+
 </script>
 
 <template>
@@ -395,6 +446,7 @@ const onMouseLeave = () => {
     @mouseenter="onMouseIn"
     @mouseleave="onMouseLeave"
   >
+    <!-- <div class="debug-indicator">Scrolling : {{ isScrolling }}</div> -->
     <div class="virtual-list hidden-scrollbar" 
         ref="listContainer" 
         @scroll="onScroll" 
@@ -432,6 +484,7 @@ const onMouseLeave = () => {
           </div>
         </template>
       </TransitionGroup>
+      <!-- </div> -->
     </div>
     <n-el tag="div" class="scrollbar-rail" v-if="!(visibleRatio >= 1)">
       <n-el tag="div" 
@@ -575,5 +628,14 @@ body.dragging .scrollbar-thumb {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.debug-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 10px;
+  color: red;
+  z-index: 1000;
 }
 </style>

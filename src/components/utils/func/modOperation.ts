@@ -2,6 +2,10 @@ import { Id, ModChange, ModInner } from '@api/types';
 import { setEnableMod as apiSetEnableMod, resetModOrder, changeModDisplayOrder } from '@api/tauriFunc';
 import { BaseListStore } from '@store';
 
+export const isMod = (item: ModInner): item is ModInner => {
+    return 'displayName' in item
+}
+
 const checkMods = (mods: (ModInner | null)[]): mods is ModInner[] => {
     if (mods.some(mod => mod === null)) {
         return false;

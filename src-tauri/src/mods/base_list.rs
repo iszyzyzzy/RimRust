@@ -92,7 +92,7 @@ pub enum ModChange {
     Author(String),
     Description(VersionMap<String>),
     Dependencies(VersionMap<HashSet<ModDependency>>),
-    SupportedVersion(HashSet<Version>),
+    SupportedVersion(VersionMap<()>),
     LoadOrder(VersionMap<HashSet<ModOrder>>),
     IncompatibleWith(VersionMap<HashSet<PackageId>>),
     SupportLanguages(VersionMap<HashSet<String>>),
@@ -140,10 +140,10 @@ pub struct ModGuard<'a> {
 }
 
 impl<'a> ModGuard<'a> {
-    fn change(&mut self, change: ModChange) {
+    pub fn change(&mut self, change: ModChange) {
         self.changes.push(change);
     }
-    fn change_mult(&mut self, changes: Vec<ModChange>) {
+    pub fn change_mult(&mut self, changes: Vec<ModChange>) {
         self.changes.extend(changes);
     }
 }
@@ -200,7 +200,7 @@ pub struct ModInner {
     pub display_name: String,
     pub description: VersionMap<String>, // <version, description>
     pub dependencies: VersionMap<HashSet<ModDependency>>, // <version, dependencies>
-    pub supported_version: HashSet<Version>,
+    pub supported_version: VersionMap<()>,
     pub path: String,
     pub load_order: VersionMap<HashSet<ModOrder>>, // <version, order>
     pub incompatible_with: VersionMap<HashSet<PackageId>>, // <version, package_id>
@@ -324,6 +324,7 @@ pub struct BaseList {
     pub trans_track: PriorityMutex<HashMap<Id, usize>>,
     pub sync_tx: Option<tokio::sync::mpsc::Sender<SyncMessage>>,
     pub auto_save_handle: Arc<Mutex<Option<(tokio::sync::oneshot::Sender<()>, tokio::task::JoinHandle<()>)>>>,
+    pub auto_refresh_handle: Arc<Mutex<Option<(tokio::sync::oneshot::Sender<()>, tokio::task::JoinHandle<()>)>>>,
 }
 
 //pub type BaseList = Arc<Mutex<BaseListInner>>;
@@ -658,12 +659,25 @@ impl BaseList {
         }
     } */
     async fn remove_mod(&self, mod_id: &Id, priority: Option<Priority>) {
-        warn!(mod_id = ?mod_id, "移除mod");
+        info!(mod_id = ?mod_id, "移除mod");
         // 先把它disable了防止错误的跟踪数据
-        self.set_enable_mod(mod_id, false, priority).await.unwrap();
+        if let Err(e) = self.set_enable_mod(mod_id, false, priority).await {
+            warn!(mod_id = ?mod_id, error = ?e, "移除mod前禁用失败，继续执行移除流程");
+        }
         // 1. 获取必要的初始数据
-        let mod_info = self.mods_map.get(mod_id).unwrap();
-        let mod_info = mod_info.value().lock().await;
+        let mod_arc = {
+            let mod_entry = self.mods_map.get(mod_id).ok_or_else(|| {
+                format!("mod不存在，无法移除: {:?}", mod_id)
+            });
+            match mod_entry {
+                Ok(entry) => entry.value().clone(),
+                Err(e) => {
+                    warn!(error = ?e);
+                    return;
+                }
+            }
+        };
+        let mod_info = mod_arc.lock().await;
         let package_id = mod_info.package_id.clone();
         let path = mod_info.path.clone();
 
@@ -672,15 +686,24 @@ impl BaseList {
             .lock(priority)
             .await
             .remove(&mod_info);
-        self.search_data
-            .lock(priority)
+        {
+            let mut search_data = self.search_data.lock(priority).await;
+            if tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                search_data.remove(&mod_info.id.clone()),
+            )
             .await
-            .remove(&mod_info.id.clone())
-            .await;
+            .is_err()
+            {
+                warn!(id = ?mod_info.id, "移除搜索索引超时，跳过并继续清理流程");
+            }
+        }
         drop(mod_info);
+        info!(mod_id = ?mod_id, "已从翻译数据和搜索数据中移除");
 
         // 3. 移除mod
         self.mods_map.remove(mod_id);
+        info!(mod_id = ?mod_id, "已从mods_map中移除");
 
         // 4. 从组中移除
         let group_ids: Vec<Id> = self
@@ -693,25 +716,51 @@ impl BaseList {
             self.remove_mod_from_group(&group_id, mod_id)
                 .await;
         }
+        info!(mod_id = ?mod_id, "已从所有mod组中移除");
 
         // 5. 更新 package_id_to_mod 和 path_set
-        let mut remove_index = None;
-        let mut vec_ = self.package_id_to_mod.get_mut(&package_id).unwrap();
-        let vec_ = vec_.value_mut();
-        for (i, mod_) in vec_.iter().enumerate() {
-            if mod_.lock().await.id == mod_id {
-                remove_index = Some(i);
-                break;
+        let mods_same_package = self
+            .package_id_to_mod
+            .get(&package_id)
+            .map(|entry| entry.value().clone())
+            .unwrap_or_default();
+
+        let mut retained = Vec::with_capacity(mods_same_package.len());
+        for mod_ in mods_same_package {
+            if mod_.lock().await.id != *mod_id {
+                retained.push(mod_);
             }
         }
-        if let Some(index) = remove_index {
-            vec_.remove(index);
-        }
-        if vec_.is_empty() {
+
+        if retained.is_empty() {
             self.package_id_to_mod.remove(&package_id);
+        } else {
+            self.package_id_to_mod.insert(package_id.clone(), retained);
         }
 
         self.path_set.remove(&path);
+        info!(mod_id = ?mod_id, "从set中移除");
+    }
+    pub async fn remove_mod_by_path(&self, mod_path: &str, priority: Option<Priority>) -> usize {
+        let entries: Vec<(Id, Mod)> = self
+            .mods_map
+            .iter()
+            .map(|item| (item.key().clone(), item.value().clone()))
+            .collect();
+
+        let mut target_ids = Vec::new();
+        for (id, mod_) in entries {
+            if mod_.lock().await.path == mod_path {
+                target_ids.push(id);
+            }
+        }
+
+        let removed_count = target_ids.len();
+        for mod_id in target_ids {
+            self.remove_mod(&mod_id, priority).await;
+        }
+
+        removed_count
     }
     pub async fn remove_mod_group(&self, group_id: &Id) {
         warn!(group_id = ?group_id, "移除mod组");
@@ -763,20 +812,35 @@ impl BaseList {
         let mod_ = self
             .get_mod(mod_id)
             .ok_or("Mod not found")?;
-        if let Some(language_pack) = self.translation_mod_data.lock(priority).await.get(mod_id) {
-            let mut trans_track = self.trans_track.lock(priority).await;
-            let entry = trans_track.entry(language_pack.clone()).or_insert(0);
-            if enabled {
-                *entry += 1;
-                self.set_enable_mod(language_pack, enabled, priority)
-                    .await?;
-            } else {
-                *entry -= 1;
-                if entry == &0 {
-                    trans_track.remove(language_pack);
-                    self.set_enable_mod(language_pack, enabled, priority)
-                        .await?;
+        let language_pack = self
+            .translation_mod_data
+            .lock(priority)
+            .await
+            .get(mod_id)
+            .cloned();
+
+        if let Some(language_pack) = language_pack {
+            let mut should_propagate = false;
+            {
+                let mut trans_track = self.trans_track.lock(priority).await;
+                let entry = trans_track.entry(language_pack.clone()).or_insert(0);
+                if enabled {
+                    *entry += 1;
+                    should_propagate = true;
+                } else {
+                    if *entry > 0 {
+                        *entry -= 1;
+                    }
+                    if *entry == 0 {
+                        trans_track.remove(&language_pack);
+                        should_propagate = true;
+                    }
                 }
+            }
+
+            if should_propagate {
+                self.set_enable_mod(&language_pack, enabled, priority)
+                    .await?;
             }
         }
         mod_.lock().await.change(ModChange::Enabled(enabled));
@@ -1004,6 +1068,21 @@ impl BaseList {
 
         info!("mod数据刷新完成");
         Ok((mod_order, group_order, matches))
+    }
+    pub async fn reorder_mods_by_name(&self) -> Vec<Id> {
+        info!("按名称重新排序mod");
+        let mut cache = Vec::new();
+        for mod_ in self.mods_map.iter().map(|item| item.value().clone()) {
+            let mod_guard = mod_.lock().await;
+            cache.push((mod_guard.id.clone(), mod_guard.name.clone()));
+        }
+        cache.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+        let mut mods_order = self.mods_order.lock().await;
+        mods_order.clear();
+        for (id, _) in cache {
+            mods_order.push(id);
+        }
+        mods_order.clone()
     }
 }
 

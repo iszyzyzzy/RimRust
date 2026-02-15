@@ -16,7 +16,7 @@
 import { ref } from 'vue'
 import { useMessage } from 'naive-ui'
 
-import { loadModsFromXml, loadFromGameConfig, saveModsToXml, saveToGameConfig } from '@api/tauriFunc'
+import { loadModsFromXml, loadFromGameConfig, saveModsToXml, saveToGameConfig, getSortedMods } from '@api/tauriFunc'
 import { useBaseListStore } from '@store/baseList'
 
 import ConfigModal from './Config.vue'
@@ -35,7 +35,7 @@ const options = ref([
     { label: '保存至当前xml', key: 'save' },
     { type: 'divider' },
 ])
-const handleSelect = (key: string) => {
+const handleSelect = async (key: string) => {
     switch (key) {
         case 'load':
             loadModsFromXml().then(() => {
@@ -52,15 +52,18 @@ const handleSelect = (key: string) => {
                     message.error('加载失败');
                 })
             break
+        // TODO 先这样吧，后面再研究怎么传递list的问题
         case 'save':
-            saveToGameConfig(Object.values(baseList.mods).filter(m => m.enabled).map(m => m.id)).then(() => {
-                message.success('保存成功');
+            let enabledMods = await getSortedMods();
+            saveToGameConfig(enabledMods.list).then(() => {
+                message.success('保存成功, 源文件已备份于同目录下');
             }).catch(() => {
                 message.error('保存失败');
             })
             break
         case 'save-as':
-            saveModsToXml(Object.values(baseList.mods).filter(m => m.enabled).map(m => m.id)).then(() => {
+            let enabledMods2 = await getSortedMods();
+            saveModsToXml(enabledMods2.list).then(() => {
                 message.success('保存成功');
             }).catch(() => {
                 message.error('保存失败');

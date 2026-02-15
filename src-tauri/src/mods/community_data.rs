@@ -141,5 +141,21 @@ impl CommunityData {
             bincode::config::standard(),
         )
         .unwrap();
+    if cfg!(debug_assertions) {
+        let debug_data = serde_json::json!({
+            "community_rules": serde_json::to_value(community_rules.clone()).unwrap_or_default(),
+        });
+
+        let debug_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(format!("{}\\debug_data.json", app_data_path));
+
+        if let Ok(mut file) = debug_file {
+            if let Err(e) = serde_json::to_writer_pretty(&mut file, &debug_data) {
+                warn!(error = ?e, "写入debug json失败");
+            }
+        }
+    }
     }
 }

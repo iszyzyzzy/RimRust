@@ -2,11 +2,11 @@
 import { computed, onMounted, onUnmounted, ref, watch, h, ComponentPublicInstance, nextTick } from 'vue';
 import { useMessage, useModal, NInput, NRadioGroup, NRadio } from 'naive-ui';
 import {isEqual} from 'lodash-es';
-import {ErrorOutlineFilled, WarningAmberFilled, CheckOutlined} from '@vicons/material'
+import {ErrorOutlineRound, WarningAmberRound, CheckOutlined} from '@vicons/material'
 
-import { Id, ModInner, SortResult } from '@api/types';
+import { Id, ModInner, SortResult, SortWarning, SortError } from '@api/types';
 import { DragCrossListPayload, DragEndPayload, VirtualListInst } from '@utils/components/VirtualListInterface';
-import { useBaseListStore, useInitdStore } from '@utils/store';
+import { useBaseListStore, useInitdStore, useScrollTo } from '@utils/store';
 import { getSortedMods, searchMods } from '@api/tauriFunc';
 import { setEnableMod } from '@utils/func/modOperation';
 
@@ -14,11 +14,11 @@ import ItemMod from './../ItemMod.vue'
 import VirtualList from '@utils/components/VirtualList.vue';
 import EditUserOrder, { EditUserOrderInterface } from '@components/header/EditUserOrder.vue';
 import ErrorInfo from './ErrorInfo.vue';
+import WarningInfo from './WarningInfo.vue';
 
 const props = defineProps<{
     selected?: Id,
     title?: string,
-    scrollTo?: string,
     active?: boolean,
     listId?: number
 }>()
@@ -33,6 +33,7 @@ const emit = defineEmits<{
 
 // 基础数据
 const baseListStore = useBaseListStore();
+const scrollTo = useScrollTo();
 const searchValue = ref('');
 const searchLoading = ref(false);
 const isItemSelected = ref(false);
@@ -86,7 +87,11 @@ const fetchSortedMods = async () => {
         for (const id of sortedIds) {
             const mod = baseListStore.getModById(id);
             if (mod) {
-                newSortedList.push(mod);
+                newSortedList.push({
+                    ...mod,
+                    //warning: SortWarningFilter(result.warning, id, mod.packageId),
+                    //error: SortErrorFilter(result.error, id)
+                });
             } else {
                 console.warn('id not found', id);
             }
@@ -102,6 +107,50 @@ const fetchSortedMods = async () => {
         loading.value = false;
     }
 };
+
+const warningsMap = computed<Record<Id, SortWarning[]>>(() => {
+  const map: Record<Id, SortWarning[]> = {};
+  const warnings = sortResult.value.warning || [];
+  for (const w of warnings) {
+    if ('ConflictingOrders' in w) {
+      const [a, b] = w.ConflictingOrders;
+      (map[a] = map[a] || []).push(w);
+      (map[b] = map[b] || []).push(w);
+    } else if ('DuplicatePackageId' in w) {
+      // 将 DuplicatePackageId 关联到当前已排序列表中匹配该 packageId 的 mod
+      for (const mod of sortedModsList.value) {
+        if (mod.packageId === w.DuplicatePackageId) {
+          (map[mod.id] = map[mod.id] || []).push(w);
+        }
+      }
+    } else if ('VersionMismatch' in w) {
+      const id = w.VersionMismatch[0];
+      (map[id] = map[id] || []).push(w);
+    }
+  }
+  console.log('Warnings map:', map);
+  return map;
+});
+
+const errorsMap = computed(() => {
+    const map: Record<Id, SortError[]> = {};
+    const errors = sortResult.value.error || [];
+    for (const e of errors) {
+        if ('CircularDependency' in e) {
+            for (const id of e.CircularDependency) {
+                (map[id] = map[id] || []).push(e);
+            }
+        } else if ('IncompatibleMods' in e) {
+            for (const id of e.IncompatibleMods) {
+                (map[id] = map[id] || []).push(e);
+            }
+        } else if ('MissingDependency' in e) {
+            const id = e.MissingDependency[0];
+            (map[id] = map[id] || []).push(e);
+        }
+    }
+    return map;
+});
 
 
 const initd = useInitdStore();
@@ -184,7 +233,7 @@ const handleKeyUp = () => {
     //console.log('handleUp')
     if (props.active) {
         const index = showData.value.findIndex((item) => {
-            return isMod(item) && item.id === props.selected
+            return item.id === props.selected
         })
         if (index > 0) {
             handleClick((showData.value[index - 1] as ModInner).id)
@@ -197,7 +246,7 @@ const handleKeyDown = () => {
     //console.log('handleDown')
     if (props.active) {
         const index = showData.value.findIndex((item) => {
-            return isMod(item) && item.id === props.selected
+            return item.id === props.selected
         })
         if (index < showData.value.length - 1) {
             handleClick((showData.value[index + 1] as ModInner).id)
@@ -347,10 +396,13 @@ const itemMaxWidth = computed(() => {
     return searchRef.value?.$el?.offsetWidth || 200;
 }) 
 
-type Item = ModInner
-const isMod = (item: Item): item is ModInner => {
-    return 'displayName' in item;
-}
+scrollTo.$subscribe((_, state) => {
+    if (state.target_id && (state.special_list === null || state.special_list === "enabled")) {
+        nextTick(() => {
+            virtualListInst.value!.scrollToKey(state.target_id!)
+        })
+    }
+})
 </script>
 
 <template>
@@ -380,10 +432,11 @@ const isMod = (item: Item): item is ModInner => {
                         @drag-cross-list="emit('dragCrossList', $event)"
                     >
                         <template #default="{ item, textColor }">
-                            <ItemMod v-if="isMod(item)" :item="item" @click="handleClick" @double-click="handleDoubleClick"
+                            <ItemMod :item="item" @click="handleClick" @double-click="handleDoubleClick"
                                 :selected="item.id === props.selected" :highlight-pattern="highlightPattern" class="mod-item"
-                                :id="item.id" :highlight-field="highlightField[item.id]" :max-width="itemMaxWidth" :text-color="textColor"/>
-                            <ItemGroup v-else :item="item" />
+                                :id="item.id" :highlight-field="highlightField[item.id]" :max-width="itemMaxWidth" :text-color="textColor"
+                                :warning="warningsMap[item.id]" :error="errorsMap[item.id]"
+                                />
                         </template>
                     </VirtualList>
                     <n-empty v-else description="没有已启用的模组" />
@@ -399,21 +452,34 @@ const isMod = (item: Item): item is ModInner => {
                         <template #trigger>
                             <n-tag type="error">
                                 <template #icon>
-                                    <n-icon><ErrorOutlineFilled /></n-icon>
+                                    <n-icon><ErrorOutlineRound /></n-icon>
                                 </template>
                                 {{ sortResult.error.length }}
                             </n-tag>
                         </template>
                         <div v-for="(err, index) in sortResult.error" :key="index" style="display: block; margin-bottom: 8px;">
-                            <ErrorInfo :err="err" :sequence="index + 1" />
+                            <ErrorInfo :err="err" :sequence="index + 1" :display-quick-fix="true"/>
                         </div>
                     </n-popover>
-                    <n-tag type="warning" v-if="sortResult.warning.length > 0">
-                        <template #icon>
-                            <n-icon><WarningAmberFilled /></n-icon>
+                    <n-popover
+                        v-if="sortResult.warning.length > 0"
+                        placement="top"
+                        trigger="hover"
+                        style="max-width: 50vw; max-height: 35vh;"
+                        scrollable
+                    > 
+                        <template #trigger>
+                            <n-tag type="warning">
+                                <template #icon>
+                                    <n-icon><WarningAmberRound /></n-icon>
+                                </template>
+                                {{ sortResult.warning.length }}
+                            </n-tag>
                         </template>
-                        {{ sortResult.warning.length }}
-                    </n-tag>
+                        <div v-for="(warn, index) in sortResult.warning" :key="index" style="display: block; margin-bottom: 8px;">
+                            <WarningInfo :err="warn" :sequence="index + 1" :display-quick-fix="true"/>
+                        </div>
+                    </n-popover>
                     <n-tag type="success" v-if="sortResult.error.length === 0 && sortResult.warning.length === 0">
                         <template #icon>
                             <n-icon><CheckOutlined /></n-icon>

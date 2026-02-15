@@ -56,6 +56,9 @@ const searchConfig = computed(() => {
 
 const translateData: Record<string, [string, string, string]> = {
   prefer_language: ["首选语言", "如果你能看懂这句话，我想你应该是不用动这个的", "string"],
+  llm_api_entry_point: ["LLM ApiEntryPoint", "OpenAI 兼容接口入口，例如 https://api.openai.com/v1", "string"],
+  llm_api_key: ["LLM API Key", "用于翻译请求的鉴权 Key", "string"],
+  llm_api_model: ["LLM API Model", "用于翻译请求的模型，例如 gpt-4o-mini", "string"],
 }
 
 const translateConfig = computed(() => {

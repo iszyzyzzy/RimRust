@@ -56,6 +56,9 @@ export async function changeModDisplayOrder(fromIndex: number, toIndex: number):
 }
 
 export async function resetModOrder(): Promise<[Id, number][]> {
+  /*
+  * @deprecated
+  */
   return await invoke('mod_reset_order');
 }
 
@@ -222,6 +225,12 @@ export async function autoTranslate(text: string,from: string,to: string): Promi
 
 export async function loadSaveMetaData(): Promise<[SaveMetaData | null, SaveMetaData | null]> {
   return await invoke('save_mata_data_get');
+}
+
+
+// TODO
+export async function reorderModsByName(): Promise<Id[]> {
+  return await invoke('reorder_mods_by_name');
 }
 
 // 事件监听

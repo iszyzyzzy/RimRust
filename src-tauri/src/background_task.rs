@@ -89,24 +89,29 @@ impl TaskManager {
         // 启动状态更新聚合循环
         let status_app = app_clone.clone();
         tokio::spawn(async move {
-            let mut updates = VecDeque::new();
+            let mut updates = Vec::new();
             let mut interval = tokio::time::interval(Duration::from_millis(80));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             
             loop {
                 // 等待下一个固定时间点
                 interval.tick().await;
-                debug!("任务状态更新聚合循环");
+                // debug!("任务状态更新聚合循环");
                 
-                // 收集这段时间内的所有更新
+                // 收集这段时间内的更新，限制最大数量以避免拥塞
+                let mut count = 0;
                 while let Ok(update) = status_rx.try_recv() {
-                    debug!(update = ?update, "收到任务状态更新");
-                    updates.push_back(update);
+                    // debug!(update = ?update, "收到任务状态更新");
+                    updates.push(update);
+                    count += 1;
+                    if count >= 2000 { 
+                         break;
+                    }
                 }
                 
                 // 发送并清理
                 if !updates.is_empty() {
-                    debug!(updates = ?updates, "发送任务状态更新");
+                    // debug!(updates = ?updates, "发送任务状态更新");
                     match timeout(Duration::from_secs(1), async {status_app.emit("task_status_update_many", updates.clone())}).await {
                         Ok(Ok(_)) => {
                             info!("成功发送任务状态更新 len={}", updates.len());
@@ -114,9 +119,12 @@ impl TaskManager {
                         },
                         Ok(Err(e)) => {
                             warn!("emit失败: {}", e);
+                            // 如果失败，保留updates到下一次循环? 这里简单起见先清空防止堆积导致内存溢出
+                            updates.clear(); 
                         }
-                        Err(e) => {
-                            warn!("emit超时: {}", e);
+                        Err(_e) => { // timeout error
+                            warn!("emit超时");
+                            updates.clear();
                         }
                     }
                 }

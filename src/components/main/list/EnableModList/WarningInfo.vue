@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { Id, SortError } from '@/api/types';
+import { Id, SortWarning } from '@/api/types';
 import { useBaseListStore } from '@/components/utils/store';
-import { computed, onMounted } from 'vue';
+import { computed } from 'vue';
 
 import QuickFix from './QuickFix.vue';
 
 const baseList = useBaseListStore();
 
 const { err, sequence, displayQuickFix = false } = defineProps<{
-    err: SortError
+    err: SortWarning
     sequence?: Number
     displayQuickFix: Boolean
 }>();
@@ -23,23 +23,19 @@ const text = computed(()=> {
         t += `${sequence}. `;
     }
     switch (true) {
-        case 'MissingDependency' in err:
-            t += `缺失依赖: "${getModName(err.MissingDependency[0])}" 需要 "${err.MissingDependency[2]}"`;
+        case 'ConflictingOrders' in err:
+            t += `无法找到合适的加载顺序: ${getModName(err.ConflictingOrders[0])} 和 ${getModName(err.ConflictingOrders[1])}`;
             break;
-        case 'CircularDependency' in err:
-            t += `循环依赖: ${err.CircularDependency.join(' -> \n')} -> ${err.CircularDependency[0]}`;
+        case 'DuplicatePackageId' in err:
+            t += `存在重复的包ID: ${err.DuplicatePackageId}, 游戏可能会加载错误的模组`;
             break;
-        case 'IncompatibleMods' in err:
-            t += `不兼容: ${getModName(err.IncompatibleMods[0])} 与 ${getModName(err.IncompatibleMods[1])}`;
+        case 'VersionMismatch' in err:
+            t += `模组 ${getModName(err.VersionMismatch[0])} 未显式支持当前游戏版本`;
             break;
         default:
             t += '未知错误';
     }
     return t;
-})
-
-onMounted(() => {
-    console.log(`${displayQuickFix}`);
 })
 </script>
 

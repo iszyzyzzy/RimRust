@@ -152,10 +152,13 @@ impl SearchDataInner {
                         let writer = mod_writer.write().await;
                         if let Err(e) = writer.add_document(doc) {
                             warn!(
-                                "添加mod到搜索引擎失败: name:{} err: {} ,重新加入队列",
+                                "添加mod到搜索引擎失败: name:{} err: {} ,尝试非阻塞重入队列",
                                 mod_.name, e
                             );
-                            write_tx.send(WriteOp::Add(mod_)).await.unwrap();
+                            drop(writer);
+                            if let Err(send_err) = write_tx.try_send(WriteOp::Add(mod_)) {
+                                warn!("重入队列失败(已丢弃本次写入): {}", send_err);
+                            }
                         } else {
                             uncommitted_docs.fetch_add(1, Ordering::Relaxed);
                         }
@@ -186,10 +189,13 @@ impl SearchDataInner {
                         let writer = mod_writer.write().await;
                         if let Err(e) = writer.add_document(doc) {
                             warn!(
-                                "添加mod到搜索引擎失败: name:{} err: {} ,重新加入队列",
+                                "添加mod到搜索引擎失败: name:{} err: {} ,尝试非阻塞重入队列",
                                 mod_.name, e
                             );
-                            write_tx.send(WriteOp::Add(mod_)).await.unwrap();
+                            drop(writer);
+                            if let Err(send_err) = write_tx.try_send(WriteOp::Add(mod_)) {
+                                warn!("重入队列失败(已丢弃本次写入): {}", send_err);
+                            }
                         } else {
                             uncommitted_docs.fetch_add(1, Ordering::Relaxed);
                         }

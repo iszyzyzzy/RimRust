@@ -31,7 +31,7 @@ export interface ModInnerRaw {
   displayName: string;
   description: Record<string, string>;
   dependencies: Record<string, ModDependency[]>;
-  supportedVersion: Version[];
+  supportedVersion: Record<string, null>;
   path: string;
   loadOrder: Record<string, ModOrder[]>;
   incompatibleWith: Record<string, PackageId[]>;
@@ -45,7 +45,8 @@ export function convertRawModToMod(raw: ModInnerRaw): ModInner {
     dependencies: VersionMap.fromMap(raw.dependencies),
     loadOrder: VersionMap.fromMap(raw.loadOrder),
     incompatibleWith: VersionMap.fromMap(raw.incompatibleWith),
-    supportLanguages: VersionMap.fromMap(raw.supportLanguages)
+    supportLanguages: VersionMap.fromMap(raw.supportLanguages),
+    supportedVersion: Object.keys(raw.supportedVersion)
   };
 }
 
@@ -166,10 +167,38 @@ export type SortError = {
   MissingDependency: [Id, PackageId, string];
 }
 
+export function SortErrorFilter(errors: SortError[], modId: Id): SortError[] {
+  const filtered = errors.filter(e => {
+    if ('CircularDependency' in e) {
+      return e.CircularDependency.includes(modId);
+    } else if ('IncompatibleMods' in e) {
+      return e.IncompatibleMods.includes(modId);
+    } else if ('MissingDependency' in e) {
+      return e.MissingDependency[0] === modId;
+    }
+  });
+  return filtered;
+}
+
 export type SortWarning = {
   ConflictingOrders: [Id, Id];
 } | {
   DuplicatePackageId: PackageId;
+} | {
+  VersionMismatch: [Id, Version, Version[]];
+}
+
+export function SortWarningFilter(warnings: SortWarning[], modId: Id, packageId: PackageId): SortWarning[] {
+  const filtered = warnings.filter(w => {
+    if ('ConflictingOrders' in w) {
+      return w.ConflictingOrders.includes(modId);
+    } else if ('DuplicatePackageId' in w) {
+      return w.DuplicatePackageId === packageId;
+    } else if ('VersionMismatch' in w) {
+      return w.VersionMismatch[0] === modId;
+    }
+  });
+  return filtered;
 }
 
 export interface SearchResult {
@@ -201,7 +230,7 @@ export type ModChangeRaw = {
 } | {
   dependencies: Record<string, ModDependency[]>;
 } | {
-  supportedVersion: Version[];
+  supportedVersion: Record<string, null>;
 } | {
   loadOrder: Record<string, ModOrder[]>;
 } | {
@@ -225,6 +254,8 @@ export function convertRawModChangeToModChange(raw: ModChangeRaw): ModChange {
     return { incompatibleWith: VersionMap.fromMap(raw.incompatibleWith) };
   } else if ('supportLanguages' in raw) {
     return { supportLanguages: VersionMap.fromMap(raw.supportLanguages) };
+  } else if ('supportedVersion' in raw) {
+    return { supportedVersion: Object.keys(raw.supportedVersion) };
   } else {
     return raw;
   }

@@ -1,6 +1,7 @@
 use ahash::{HashMap, HashSet, HashMapExt, HashSetExt};
+use tracing_subscriber::field::debug;
 use std::{fmt::Debug, io::BufRead};
-use tracing::{warn, debug, trace};
+use tracing::{warn, debug, trace, info};
 use quick_xml::{Reader, events::Event};
 
 use crate::types::*;
@@ -79,6 +80,7 @@ impl ModMetaData {
         priority: Option<Priority>
     ) -> crate::mods::ModInner {
         debug!(path = ?path, "开始转换ModMetaData到Mod");
+        debug!(self = ?self, "Raw ModMetaData");
         let steam_db_data = if path.contains("workshop\\content\\294100") {
             debug!("检测到Steam Workshop路径");
             let steam_db = steam_db.lock(priority).await;
@@ -87,7 +89,7 @@ impl ModMetaData {
             None
         };
         let language_scan_result = self.language_scan(&path);
-        trace!(languages = ?language_scan_result, "语言扫描结果");
+        debug!(languages = ?language_scan_result, "语言扫描结果");
         if self.package_id.is_none() {
             debug!("未找到package_id，尝试从Steam数据获取");
             if let Some(data) = &steam_db_data {
@@ -95,9 +97,11 @@ impl ModMetaData {
                     self.package_id = Some(data_id);
                 } else {
                     self.package_id = Some("missing.packageid".to_string());
+                    warn!("真没找到package_id,使用缺省值");
                 }
             } else {
                 self.package_id = Some("missing.packageid".to_string());
+                warn!("真没找到package_id,使用缺省值");
             }
         }
         if self.authors.is_some() {
@@ -144,6 +148,7 @@ impl ModMetaData {
                 self.name = Some("Missing Name".to_string());
             }
         }
+        debug!(name = ?self.name, package_id = ?self.package_id, author = ?self.author, "Mod基本信息及转换");
         let mut mod_ = crate::mods::ModInner::default();
         mod_.id = Id::new();
         mod_.enabled = false;
@@ -225,66 +230,57 @@ impl ModMetaData {
             .iter()
             .map(|v| Version::new(v))
             .collect();
+
         let mut load_order: HashMap<Version, HashSet<crate::mods::ModOrder>> = HashMap::new();
         if let Some(load_before) = &self.load_before {
-            let mut load_before_ = HashSet::new();
             for id in load_before.iter() {
-                load_before_.insert(crate::mods::ModOrder::Before(PackageId::from_str(
-                    id.clone(),
-                )));
+                load_order.entry(Version::all())
+                    .or_insert_with(HashSet::new)
+                    .insert(crate::mods::ModOrder::Before(PackageId::from_str(id.clone())));
             }
-            load_order.insert(Version::all(), load_before_);
         };
         if let Some(load_before_by_version) = &self.load_before_by_version {
             for (version, load_before) in load_before_by_version.iter() {
-                let mut load_before_ = HashSet::new();
                 for id in load_before.iter() {
-                    load_before_.insert(crate::mods::ModOrder::Before(PackageId::from_str(
-                        id.clone(),
-                    )));
+                    load_order.entry(Version::new(version))
+                        .or_insert_with(HashSet::new)
+                        .insert(crate::mods::ModOrder::Before(PackageId::from_str(id.clone())));
                 }
-                load_order.insert(Version::new(version), load_before_);
             }
         };
         if let Some(force_load_before) = &self.force_load_before {
-            let mut force_load_before_ = HashSet::new();
             for id in force_load_before.iter() {
-                force_load_before_.insert(crate::mods::ModOrder::Before(PackageId::from_str(
-                    id.clone(),
-                )));
+                load_order.entry(Version::all())
+                    .or_insert_with(HashSet::new)
+                    .insert(crate::mods::ModOrder::Before(PackageId::from_str(id.clone())));
             }
-            load_order.insert(Version::all(), force_load_before_);
         };
         if let Some(load_after) = &self.load_after {
-            let mut load_after_ = HashSet::new();
             for id in load_after.iter() {
-                load_after_.insert(crate::mods::ModOrder::After(PackageId::from_str(
-                    id.clone(),
-                )));
+                load_order.entry(Version::all())
+                    .or_insert_with(HashSet::new)
+                    .insert(crate::mods::ModOrder::After(PackageId::from_str(id.clone())));
             }
-            load_order.insert(Version::all(), load_after_);
         };
         if let Some(load_after_by_version) = &self.load_after_by_version {
             for (version, load_after) in load_after_by_version.iter() {
-                let mut load_after_ = HashSet::new();
                 for id in load_after.iter() {
-                    load_after_.insert(crate::mods::ModOrder::After(PackageId::from_str(
-                        id.clone(),
-                    )));
+                    load_order.entry(Version::new(version))
+                        .or_insert_with(HashSet::new)
+                        .insert(crate::mods::ModOrder::After(PackageId::from_str(id.clone())));
                 }
-                load_order.insert(Version::new(version), load_after_);
             }
         };
         if let Some(force_load_after) = &self.force_load_after {
-            let mut force_load_after_ = HashSet::new();
             for id in force_load_after.iter() {
-                force_load_after_.insert(crate::mods::ModOrder::After(PackageId::from_str(
-                    id.clone(),
-                )));
+                load_order.entry(Version::all())
+                    .or_insert_with(HashSet::new)
+                    .insert(crate::mods::ModOrder::After(PackageId::from_str(id.clone())));
             }
-            load_order.insert(Version::all(), force_load_after_);
         };
+        debug!(load_order = ?load_order);
         mod_.load_order = VersionMap::from_map(load_order);
+
         if let Some(incompatible_with) = &self.incompatible_with {
             let mut incompatible_with_ = HashSet::new();
             for id in incompatible_with.iter() {
@@ -322,14 +318,14 @@ impl ModMetaData {
         debug!(path = ?path, "开始扫描mod支持的语言");
         let mut language_scan_result = VersionMap::new();
         if self.is_core() || self.is_dlc() {
-            trace!("检测到core/DLC，添加所有支持的语言");
+            debug!("检测到core/DLC，添加所有支持的语言");
             language_scan_result.insert(Version::all(), LANGUAGE_CODE_TO_NAME
             .keys()
             .map(|k| k.to_string())
             .collect());
         } else {
             if std::fs::exists(format!("{}\\Languages", path)).unwrap() {
-                trace!("开始扫描Languages目录");
+                debug!("开始扫描Languages目录");
                 let mut t = HashSet::new();
                 for entry in std::fs::read_dir(format!("{}\\Languages", path)).unwrap() {
                     let entry = entry.unwrap();

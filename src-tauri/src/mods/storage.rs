@@ -297,6 +297,81 @@ impl BaseList {
         let mut guard = self.auto_save_handle.lock().await;
         *guard = Some((tx, handle));
     }
+
+    pub async fn start_auto_refresh_mods_data(&self, task_manager: &crate::background_task::TaskManager) {
+        if let Some((tx, handle)) = self.auto_refresh_handle.lock().await.take() {
+            info!("停止已有的自动刷新mod任务");
+            tx.send(()).unwrap();
+            let _ = tokio::try_join!(handle);
+        }
+
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let app = Arc::new(self.app_handles.clone().unwrap());
+        let status_tx = task_manager.get_status_tx();
+
+        let task_status = crate::background_task::TaskStatusAdd::new(
+            app.clone(),
+            crate::background_task::TaskStatus {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: "自动刷新mod数据".to_string(),
+                status: "运行中".to_string(),
+                info: "".to_string(),
+                progress: 0.0,
+            },
+            status_tx,
+        ).await;
+
+        let handle = tokio::spawn(async move {
+            let mut task_status = task_status.lock().await;
+            task_status.update_info("休眠中");
+            task_status.update_status("休眠中");
+            task_status.update_progress(100.0);
+            interval.tick().await; // 跳过第一次执行避免影响初次加载
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        let base_list = app.state::<BaseList>();
+                        let app_config = app.state::<Mutex<crate::AppConfig>>();
+                        let app_config = app_config.lock().await;
+
+                        if app_config.steam_mods_path.is_empty() || app_config.game_path.is_empty() {
+                            task_status.update_info("路径未配置，跳过自动刷新");
+                            task_status.update_status("休眠中");
+                            continue;
+                        }
+
+                        task_status.update_info("自动刷新mod数据中");
+                        task_status.update_status("运行中");
+                        task_status.update_progress(5.0);
+
+                        match base_list.refresh_mods_data(&app_config, &mut task_status).await {
+                            Ok(_) => {
+                                info!("自动刷新mod数据完成");
+                                task_status.update_info("自动刷新mod数据完成");
+                            }
+                            Err(e) => {
+                                warn!(error = ?e, "自动刷新mod数据失败");
+                                task_status.update_info(format!("自动刷新失败: {}", e));
+                            }
+                        }
+
+                        info!("自动刷新mod数据完成");
+                        task_status.update_status("休眠中");
+                    },
+                    _ = &mut rx => {
+                        task_status.update_status("已结束");
+                        break;
+                    }
+                }
+            }
+        });
+
+        let mut guard = self.auto_refresh_handle.lock().await;
+        *guard = Some((tx, handle));
+    }
 }
 
 pub fn load_save_meta_data(app_data_path: String) -> (Option<SaveMetaData>, Option<SaveMetaData>) {

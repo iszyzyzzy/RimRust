@@ -7,6 +7,7 @@ mod storage;
 mod translate;
 mod xml;
 mod steam;
+mod mod_manager;
 
 pub use base_list::{BaseList, Mod, ModInner, ModDependency, SteamId, ModOrder};
 pub use scan::{InfoType, ScanResult};

@@ -17,15 +17,15 @@ pub async fn load_mod_from_path(
     debug!(path = ?path, "开始加载mod");
     status.update_info("读取中");
     status.update_progress(33.3);
-    if !(std::fs::exists(path).unwrap()
-        && std::fs::exists(format!("{}/About/About.xml", path)).unwrap())
+    if !(tokio::fs::try_exists(path).await.unwrap_or(false)
+        && tokio::fs::try_exists(format!("{}/About/About.xml", path)).await.unwrap_or(false))
     {
         warn!("Mod目录不存在: {}", path);
         return Err(format!("Mod目录不存在: {}", path));
     };
     let file_path = format!("{}/About/About.xml", path);
     debug!(file_path = ?file_path, "读取About.xml");
-    let data = std::fs::read(&file_path).unwrap();
+    let data = tokio::fs::read(&file_path).await.unwrap();
     
     let content = match try_decode(data) {
         Ok(content) => {
@@ -63,9 +63,9 @@ pub async fn generate_load_mission(
     task_deps: Option<Vec<String>>,
 ) -> Result<(), String> {
     debug!(path = ?path, "开始生成加载任务");
-    for entry in std::fs::read_dir(path).unwrap() {
+    let mut entries = tokio::fs::read_dir(path).await.map_err(|e| e.to_string())?;
+    while let Ok(Some(entry)) = entries.next_entry().await {
         debug!(?entry);
-        let entry = entry.unwrap();
         let path = entry.path();
         if path.is_dir() {
             let path = path.to_str().unwrap().to_string();

@@ -8,7 +8,7 @@ use tracing::trace;
 use ahash::HashMap;
 use tracing::{info, warn};
 
-#[derive(Debug, Default, Clone, bincode::Decode,bincode::Encode)]
+#[derive(Debug, Default, Clone, bincode::Decode,bincode::Encode, Serialize, Deserialize)]
 pub struct CommunityModsOrder {
     data: HashMap<PackageId, Vec<ModOrder>>,
     updated_at: i64,
@@ -26,7 +26,7 @@ impl CommunityModsOrder {
         //let span = span!(tracing::Level::INFO, "update_community_mods_order");
         //let _enter = span.enter();
         info!(update_at = ?self.updated_at, now = ?chrono::Utc::now().timestamp(),"检查社区规则更新");
-        if !(chrono::Utc::now().timestamp() - self.updated_at > 60 * 60 * 24 * 30)
+        if !(chrono::Utc::now().timestamp() - self.updated_at > 60 * 60 * 24 * 30) // 30天
         {
             info!("无须更新");
             status.update_info("无须更新");
@@ -79,6 +79,14 @@ impl CommunityModsOrder {
 
 
         info!(size = ?buffer.len(), "下载完成");
+        if cfg!(debug_assertions) {
+            std::fs::write(
+                format!("{}/community_mods_order_debug.json", app_data_path),
+                &buffer,
+            )
+            .ok();
+        }
+
         status.update_info("反序列化...");
         status.update_progress(30.0);
         let response: StructOfCommunityModsOrder = serde_json::from_slice(&buffer)
@@ -92,6 +100,14 @@ impl CommunityModsOrder {
 
         let total = response.rules.len();
         info!(len = ?total, "反序列化完成");
+        if cfg!(debug_assertions) {
+            std::fs::write(
+                format!("{}/community_mods_order_debug_parsed.json", app_data_path),
+                serde_json::to_string_pretty(&response).unwrap(),
+            )
+            .ok();
+        }
+
 
         status.update_info("解析...");
         status.update_progress(50.0);
@@ -179,36 +195,43 @@ struct CommunityModsOrderRule {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        rename = "load_before"
+        rename = "loadBefore"
     )]
     load_before: Option<HashMap<String, CommunityModsOrderRuleModReference>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        rename = "load_after"
+        rename = "loadAfter"
     )]
     load_after: Option<HashMap<String, CommunityModsOrderRuleModReference>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        rename = "load_first"
+        rename = "loadFirst"
     )]
     load_first: Option<CommunityModsOrderRuleModReferenceSP>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "load_last")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "loadLast")]
     load_bottom: Option<CommunityModsOrderRuleModReferenceSP>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum StringValue {
+    Single(String),
+    Multiple(Vec<String>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommunityModsOrderRuleModReference {
-    name: Vec<String>,
+    name: StringValue,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    comment: Option<Vec<String>>,
+    comment: Option<StringValue>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommunityModsOrderRuleModReferenceSP {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    comment: Option<Vec<String>>,
+    comment: Option<StringValue>,
     value: bool,
 }
 

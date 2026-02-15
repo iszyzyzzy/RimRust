@@ -12,6 +12,9 @@ export interface AppConfig {
     fallback_language: string;
     use_advance_search: boolean;
     proxy: string | null;
+    llm_api_entry_point: string | null;
+    llm_api_key: string | null;
+    llm_api_model: string | null;
 }
 
 export const useAppConfigStore = defineStore('app-config', {
@@ -28,6 +31,10 @@ export const useAppConfigStore = defineStore('app-config', {
             fallback_language: '',
             use_advance_search: false,
             proxy: null,
+            llm_api_entry_point: null,
+            llm_api_key: null,
+            llm_api_model: null,
+            
         }
     }
 })
@@ -59,3 +66,35 @@ export const useInitdStore = defineStore('initd', {
 export type InitdStore = ReturnType<typeof useInitdStore>;
 
 export { useDragStore, type DragStore } from './drag';
+
+export const useScrollTo = defineStore('scroll-to', {
+    state: () => {
+        return {
+            target_id: null as string | null,
+            special_list: null as string | null,
+            count: 0,
+        }
+    },
+    actions: {
+        scrollTo(id: string, specialList: string | null = null) {
+            this.target_id = id;
+            this.special_list = specialList;
+            this.count += 1;
+        }
+    }
+})
+
+export const useSelectMod = defineStore('select-mod', {
+    state: () => {
+        return {
+            mod_id: null as string | null,
+            count: 0,
+        }
+    },
+    actions: {
+        selectMod(id: string | null) {
+            this.mod_id = id;
+            this.count += 1;
+        }
+    }
+})

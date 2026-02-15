@@ -1,7 +1,7 @@
 use ahash::{HashMap, HashSet, HashMapExt, HashSetExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::mods::{self, BaseList, BaseListForSave, ModOrder, SearchField};
 use crate::{background_task, types::*, AppConfig};
@@ -263,6 +263,19 @@ pub async fn xml_save_to_config(
     info!("前端请求保存mods列表到游戏设置");
     let file_path = app_config.lock().await.game_config_path.clone();
     let game_version = app_config.lock().await.game_version.clone();
+    // 创建一个备份避免手误
+    if(std::fs::exists(format!("{}/ModsConfig.xml", file_path)).unwrap_or_else(|_| false)) {
+        if let Err(e) = std::fs::copy(
+            format!("{}/ModsConfig.xml", file_path),
+            format!("{}/ModsConfig_backup.xml", file_path)
+        ) {
+            warn!("创建备份失败: {}", e);
+        } else {
+            info!("已创建备份: {}/ModsConfig_backup.xml", file_path);
+        }
+    } else {
+        info!("未找到原文件，跳过创建备份");
+    }
     base_list
         .save_to_xml(
             &format!("{}/ModsConfig.xml", file_path),
@@ -270,6 +283,16 @@ pub async fn xml_save_to_config(
             mods
         )
         .await
+}
+
+#[tauri::command]
+pub async fn reorder_mods_by_name(
+    base_list: tauri::State<'_, BaseList>,
+) -> Result<Vec<Id>, String> {
+    info!("前端请求按名称重排mod列表");
+    Ok(base_list
+        .reorder_mods_by_name()
+        .await)
 }
 
 #[tauri::command]
@@ -583,14 +606,22 @@ pub async fn translate(
         to = ?to,
         "前端请求翻译",
     );
-    let proxy = app_config.lock().await.proxy.clone();
+    let (proxy, api_entry_point, api_key, api_model) = {
+        let app_config_guard = app_config.lock().await;
+        (
+            app_config_guard.proxy.clone(),
+            app_config_guard.llm_api_entry_point.clone(),
+            app_config_guard.llm_api_key.clone(),
+            app_config_guard.llm_api_model.clone(),
+        )
+    };
     let (cache, ongoing) = base_list
         .translation_mod_data
         .lock(Priority::HIGH)
         .await
         .get_auto_translate_cache();
 
-    crate::mods::auto_translate(text, from, to, proxy, cache, ongoing).await
+    crate::mods::auto_translate(text, from, to, proxy, api_entry_point, api_key, api_model, cache, ongoing).await
 }
 
 #[tauri::command]

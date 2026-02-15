@@ -24,6 +24,10 @@ pub static DLC_LIST: Lazy<HashMap<PackageId, &'static str>> = Lazy::new(|| {
         PackageId::from_str("ludeon.rimworld.anomaly"),
         "Rimworld - Anomaly",
     );
+    m.insert(
+        PackageId::from_str("ludeon.rimworld.odyssey"),
+        "Rimworld - Odyssey",
+    );
     m
 });
 
@@ -37,6 +41,7 @@ pub static FIRST_MOD: Lazy<HashSet<PackageId>> = Lazy::new(|| {
     s.insert(PackageId::from_str("ludeon.rimworld.ideology"));
     s.insert(PackageId::from_str("ludeon.rimworld.biotech"));
     s.insert(PackageId::from_str("ludeon.rimworld.anomaly"));
+    s.insert(PackageId::from_str("ludeon.rimworld.odyssey"));
     s.insert(PackageId::from_str("unlimitedhugs.hugslib"));
     s.insert(PackageId::from_str("bs.performance"));
     s.insert(PackageId::from_str("bs.fishery"));

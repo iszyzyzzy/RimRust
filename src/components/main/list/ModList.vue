@@ -4,10 +4,11 @@ import ItemMod from './ItemMod.vue'
 import ItemGroup from './ItemGroup.vue'
 import { ComponentPublicInstance, computed, onMounted, onUnmounted, ref, watch, h, nextTick } from 'vue';
 import { useMessage, useThemeVars } from 'naive-ui'
-import { changeModDisplayOrder, resetModOrder, searchMods } from '../../../api/tauriFunc';
+import { changeModDisplayOrder, refreshModsData, reorderModsByName, resetModOrder, searchMods } from '../../../api/tauriFunc';
 import VirtualList from '../../utils/components/VirtualList.vue';
 import type { DragCrossListPayload, DragEndPayload, VirtualListInst } from '../../utils/components/VirtualListInterface';
-import { useBaseListStore } from '../../utils/store';
+import { useBaseListStore, useScrollTo } from '../../utils/store';
+import { KeyboardArrowDownRound } from '@vicons/material';
 
 type Item = ModInner
 const isMod = (item: Item): item is ModInner => {
@@ -15,10 +16,10 @@ const isMod = (item: Item): item is ModInner => {
 }
 
 const baseList = useBaseListStore()
+const scrollTo = useScrollTo()
 const props = defineProps<{
     selected?: Id,
     title?: string,
-    scrollTo?: string,
     active?: boolean,
     enabledOnly?: boolean,
     listId: number
@@ -30,7 +31,7 @@ const emit = defineEmits<{
     dragEnd: [payload: DragEndPayload],
     dragCrossList: [payload: DragCrossListPayload]
 }>()
-
+// TODO 1 搜索时非匹配项虚化而不是隐藏的功能
 const searchValue = ref('')
 const searchLoading = ref(false)
 const filterList = ref<Id[]>([])
@@ -110,9 +111,16 @@ watch(() => showData.value, () => {
 
 const virtualListInst = ref<VirtualListInst | null>()
 
-watch(() => props.scrollTo, (scrollTo) => {
-    if (scrollTo && virtualListInst.value && props.active) {
-        virtualListInst.value.scrollToKey(scrollTo)
+// watch(() => props.scrollTo, (scrollTo) => {
+//     if (scrollTo && virtualListInst.value && props.active) {
+//         virtualListInst.value.scrollToKey(scrollTo)
+//     }
+// })
+scrollTo.$subscribe((_, state) => {
+    if (state.target_id && (state.special_list === null || state.special_list === "all")) {
+        nextTick(() => {
+            virtualListInst.value!.scrollToKey(state.target_id!)
+        })
     }
 })
 
@@ -125,6 +133,7 @@ const handleKeyUp = () => {
         })
         if (index > 0) {
             handleClick((showData.value[index - 1] as ModInner).id)
+            virtualListInst.value!.scrollToIndex(index - 1)
         } else if (index === 0) {
             message.info('已经到顶啦')
         }
@@ -138,7 +147,7 @@ const handleKeyDown = () => {
         })
         if (index < showData.value.length - 1) {
             handleClick((showData.value[index + 1] as ModInner).id)
-
+            virtualListInst.value!.scrollToIndex(index + 1)
         } else if (index === showData.value.length - 1) {
             message.info('已经到底啦')
         }
@@ -266,13 +275,66 @@ onUnmounted(() => {
     window.removeEventListener('keydown', handleKeyEvents);
 });
 
+const titleOptions = ref([
+    {
+        type: 'double-check-button',
+        label: '按字母顺序重排',
+        key: 'resetByName',
+        doubleCheckText: '重排会丢失原本自定义排序!',
+        handle: () => {
+            reorderModsByName().then((res) => {
+                baseList.$patch((state) => {
+                    state.modsOrder = res;
+                })
+                message.success('重排成功');
+            }).catch(() => {
+                message.error('重排失败');
+            })
+        }
+    },
+    {
+        type: 'double-check-button',
+        label: '强制刷新',
+        key: 'forceRefresh',
+        doubleCheckText: 'debug',
+        handle: () => {
+            refreshModsData().then(() => {
+                message.success('刷新成功');
+            }).catch(() => {
+                message.error('刷新失败');
+            })
+        }
+    }
+])
 
 </script>
 
 <template>
     <n-card ref="rootRef" @click="handleCardClick" style="height: calc(100vh - 124px - 18px);">
         <n-flex vertical align="center">
-            <span ref="titleRef">{{ title }}</span>
+            <div style="position: relative;width: 100%;" ref="titleRef">
+                <span style="display: block; text-align: center;">{{ title }}</span>
+                <n-popover trigger="click" placement="bottom">
+                    <template #trigger>
+                        <n-button quaternary circle style="position: absolute; right: 0; top: 50%; transform: translateY(-50%);" size="small">
+                            <template #icon>
+                                <n-icon><KeyboardArrowDownRound /></n-icon>
+                            </template>
+                        </n-button>
+                    </template>
+                    <n-flex vertical :size="0">
+                        <div v-for="option in titleOptions" :key="option.key">
+                            <n-popconfirm v-if="option.type === 'double-check-button'"  @positive-click="option.handle">
+                                <template #trigger>
+                                    <n-button quaternary>{{ option.label }}</n-button>
+                                </template>
+                                {{ option.doubleCheckText }}
+                            </n-popconfirm>
+                            <n-button v-else-if="option.type === 'button'" quaternary @click="option.handle">{{ option.label }}</n-button>
+                        </div>
+                    </n-flex>
+                </n-popover>
+            </div>
             <n-input-group ref="searchRef">
                 <n-select style="width: 20%;" :options="selectOption" multiple v-model:value="selectValue"
                     :render-tag="() => h('div')" :consistent-menu-width="false" @update:value="handleSearch"

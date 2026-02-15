@@ -1212,7 +1212,109 @@ pub struct AutoTranslateResult {
     pub target: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct LlmChatCompletionResponse {
+    choices: Vec<LlmChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlmChoice {
+    message: LlmMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlmMessage {
+    content: String,
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|v| {
+        let trimmed = v.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+async fn llm_translate(
+    text: &str,
+    from: &str,
+    to: &str,
+    proxy: Option<String>,
+    api_entry_point: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+) -> Result<String, String> {
+    let api_entry_point = normalize_optional_string(api_entry_point)
+        .ok_or_else(|| "未配置 llm ApiEntryPoint".to_string())?;
+    let api_key = normalize_optional_string(api_key)
+        .ok_or_else(|| "未配置 llm api_key".to_string())?;
+
+    let endpoint = if api_entry_point.ends_with("/chat/completions") {
+        api_entry_point
+    } else {
+        format!("{}/chat/completions", api_entry_point.trim_end_matches('/'))
+    };
+
+    let mut client_builder = reqwest::Client::builder();
+    if let Some(proxy) = normalize_optional_string(proxy) {
+        let proxy = reqwest::Proxy::all(&proxy).map_err(|e| e.to_string())?;
+        client_builder = client_builder.proxy(proxy);
+    }
+    let client = client_builder.build().map_err(|e| e.to_string())?;
+
+    let request_body = serde_json::json!({
+        "model": model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
+        "messages": [
+            {
+                "role": "system",
+                "content": "你是一个翻译助手。请严格翻译用户文本，不要解释，不要添加额外内容，格式标记，图片等信息原样保留即可。"
+            },
+            {
+                "role": "system",
+                "content": "请注意，你正在翻译游戏RimWorld的mod相关文本，此信息作为背景信息提供，但不要在翻译时添加任何与此相关的额外信息。"
+            },
+            {
+                "role": "user",
+                "content": format!("请将以下文本从 {} 翻译为 {}：\n{}", from, to, text)
+            }
+        ],
+        "temperature": 1
+    });
+
+    let response = client
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let err_text = response.text().await.unwrap_or_default();
+        return Err(format!("LLM 翻译请求失败({}): {}", status.as_u16(), err_text));
+    }
+
+    let response_body = response
+        .json::<LlmChatCompletionResponse>()
+        .await
+        .map_err(|e| e.to_string())?;
+    let translated = response_body
+        .choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content)
+        .filter(|v| !v.trim().is_empty())
+        .ok_or_else(|| "LLM 返回结果为空".to_string())?;
+
+    Ok(translated)
+}
+
 pub async fn auto_translate(text: String, from: String, to: String, proxy: Option<String>,
+    api_entry_point: Option<String>, api_key: Option<String>, api_model: Option<String>,
     cache: Arc<Mutex<lru::LruCache<String, AutoTranslateResult, RandomState>>>,
     ongoing_auto_translate: Arc<Mutex<HashMap<String, Vec<tokio::sync::oneshot::Sender<Result<AutoTranslateResult,String>>>>>>
 ) -> Result<AutoTranslateResult, String> {
@@ -1242,38 +1344,20 @@ pub async fn auto_translate(text: String, from: String, to: String, proxy: Optio
         };
     }
 
-    ongoing_auto_translate.lock().unwrap().insert(text.clone(), vec![]);
-
-    let proxy = if let Some(proxy) = proxy {
-        if proxy == "" {
-            None
-        } else {
-            Some(proxy)
-        }
-    } else {
-        None
-    };
-    let deeplx = deeplx::DeepLX::new(deeplx::Config {
-        proxy,
-        ..deeplx::Config::default()
-    });
-    
-    let res = deeplx.translate(&from, &to, &text, None, None).await
-            .map_err(|e| e.to_string())
-            .map(|res| {
-                let result = AutoTranslateResult {
-                    code: res.code,
-                    message: res.message,
-                    data: res.data,
-                    source: res.source_lang,
-                    target: res.target_lang,
-                };
-                if res.code == 200 {
-                    cache.lock().unwrap().put(text.clone(), result.clone());
-                }
-                debug!(?result, "翻译结果");
-                result
-            });
+    let res = llm_translate(&text, &from, &to, proxy, api_entry_point, api_key, api_model)
+        .await
+        .map(|translated| {
+            let result = AutoTranslateResult {
+                code: 200,
+                message: None,
+                data: translated,
+                source: from.clone(),
+                target: to.clone(),
+            };
+            cache.lock().unwrap().put(text.clone(), result.clone());
+            debug!(?result, "翻译结果");
+            result
+        });
     
     let txs = ongoing_auto_translate.lock().unwrap().remove(&text).unwrap();
     for tx in txs {

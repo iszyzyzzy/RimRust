@@ -100,6 +100,7 @@ pub fn run() {
                 .with_target(false)
                 // 记录异步操作的开始和结束
                 .with_span_events(FmtSpan::CLOSE)
+                .with_timer(tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339().expect("could not get local offset!"))
                 .with_writer(file_appender);
                 // .with_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()));
                 // .init();
@@ -117,12 +118,14 @@ pub fn run() {
             .with_thread_ids(true)
             .with_thread_names(true)
             .with_target(true)
+            .with_timer(tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339().expect("could not get local offset!"))
             .with_writer(file_warn_appender);
 
             let console_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(true)
                 .with_target(true)
                 .with_thread_names(true)
+                .with_timer(tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339().expect("could not get local offset!"))
                 .pretty();
                 // .with_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()));
 
@@ -213,6 +216,7 @@ pub fn run() {
             func::sort_remove_user_custom_order,
             func::sort_get_user_custom_order,
             func::find_preview_image,
+            func::reorder_mods_by_name,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -252,6 +256,9 @@ struct AppConfig {
     backgroud_worker: usize,
     main_worker: usize,
     proxy: Option<String>,
+    llm_api_entry_point: Option<String>,
+    llm_api_key: Option<String>,
+    llm_api_model: Option<String>,
     data_init: bool,
 }
 
@@ -275,6 +282,9 @@ impl AppConfig {
             // 原本tokio的默认值是cpu核心数（我这32），不过我试下来4也不怎么会影响性能，属于是windows文件系统上限就在这了
             main_worker,
             proxy: None,
+            llm_api_entry_point: None,
+            llm_api_key: None,
+            llm_api_model: None,
             data_init: false,
         }
     }
@@ -304,6 +314,33 @@ impl AppConfig {
                     None
                 } else {
                     Some(proxy)
+                }
+            } else {
+                None
+            },
+            llm_api_entry_point: if let Some(llm_api_entry_point) = app_config_load.llm_api_entry_point {
+                if llm_api_entry_point == "" {
+                    None
+                } else {
+                    Some(llm_api_entry_point)
+                }
+            } else {
+                None
+            },
+            llm_api_key: if let Some(llm_api_key) = app_config_load.llm_api_key {
+                if llm_api_key == "" {
+                    None
+                } else {
+                    Some(llm_api_key)
+                }
+            } else {
+                None
+            },
+            llm_api_model: if let Some(llm_api_model) = app_config_load.llm_api_model {
+                if llm_api_model == "" {
+                    None
+                } else {
+                    Some(llm_api_model)
                 }
             } else {
                 None
@@ -362,6 +399,12 @@ struct AppConfigLoad {
     use_advance_search: bool,
     #[serde(default)]
     proxy: Option<String>,
+    #[serde(default)]
+    llm_api_entry_point: Option<String>,
+    #[serde(default)]
+    llm_api_key: Option<String>,
+    #[serde(default)]
+    llm_api_model: Option<String>,
     
 }
 
@@ -562,7 +605,9 @@ async fn init_mission(
     )
     .await; */
 
-    app.state::<mods::BaseList>().start_auto_save(app_data_path, &task_manager_guard).await;
+    let base_list = app.state::<mods::BaseList>();
+    base_list.start_auto_save(app_data_path, &task_manager_guard).await;
+    base_list.start_auto_refresh_mods_data(&task_manager_guard).await;
 
     Ok(())
 }

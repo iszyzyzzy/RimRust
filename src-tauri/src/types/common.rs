@@ -1,6 +1,6 @@
 // use super::*;
 
-use ahash::{HashMap, HashMapExt};
+use ahash::{HashMap, HashSet, HashMapExt};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -300,6 +300,20 @@ impl<'a, T> IntoIterator for &'a mut VersionMap<T> {
     }
 }
 
+impl<T> FromIterator<(Version, T)> for VersionMap<T> {
+    fn from_iter<I: IntoIterator<Item = (Version, T)>>(iter: I) -> Self {
+        let map = iter.into_iter().collect::<HashMap<Version, T>>();
+        Self(map)
+    }
+}
+
+impl FromIterator<Version> for VersionMap<()> {
+    fn from_iter<I: IntoIterator<Item = Version>>(iter: I) -> Self {
+        let map = iter.into_iter().map(|v| (v, ())).collect::<HashMap<Version, ()>>();
+        Self(map)
+    }
+}
+
 impl<T> VersionMap<T> {
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, Version, T> {
         self.0.iter()
@@ -307,6 +321,14 @@ impl<T> VersionMap<T> {
 
     pub fn iter_mut(&mut self) -> std::collections::hash_map::IterMut<'_, Version, T> {
         self.0.iter_mut()
+    }
+}
+
+// VersionSet
+impl VersionMap<()> {
+    pub fn contains(&self, version: &Version) -> bool {
+        self.0.contains_key(version) 
+            || self.0.iter().any(|(v, _)| version.proximity(v) <= 1.0)
     }
 }
 

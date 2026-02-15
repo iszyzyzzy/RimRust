@@ -13,7 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     C_highlight: typeof import('./src/components/utils/c_highlight.vue')['default']
     Config: typeof import('./src/components/header/Config.vue')['default']
-    copy: typeof import('./src/components/main/list/modList copy.vue')['default']
+    copy: typeof import('./src/components/main/list/EnableModList/ErrorInfo copy.vue')['default']
     DescriptionItem: typeof import('./src/components/utils/description-item.vue')['default']
     Descriptions: typeof import('./src/components/utils/descriptions.vue')['default']
     Drawer: typeof import('./src/components/main/translation/drawer.vue')['default']
@@ -86,6 +86,7 @@ declare module 'vue' {
     NModal: typeof import('naive-ui')['NModal']
     NModalProvider: typeof import('naive-ui')['NModalProvider']
     NNumberAnimation: typeof import('naive-ui')['NNumberAnimation']
+    NPopconfirm: typeof import('naive-ui')['NPopconfirm']
     NPopover: typeof import('naive-ui')['NPopover']
     NProgress: typeof import('naive-ui')['NProgress']
     NResult: typeof import('naive-ui')['NResult']
@@ -113,5 +114,6 @@ declare module 'vue' {
     UserOrder: typeof import('./src/components/header/UserOrder.vue')['default']
     VirtualList: typeof import('./src/components/utils/components/VirtualList.vue')['default']
     VirtualListItem: typeof import('./src/components/utils/components/VirtualListItem.vue')['default']
+    WarningInfo: typeof import('./src/components/main/list/EnableModList/WarningInfo.vue')['default']
   }
 }

@@ -117,7 +117,7 @@ const tabsValue = ref("origin");
 watch(
     () => props.data,
     () => {
-        console.log(props.data?.id);
+        console.log(`infocard watch ${props.data?.id}`);
         autoTranslateText.value = "";
         autoTranslatePreText.value = "";
         requestAnimationFrame(() => {
@@ -130,7 +130,7 @@ watch(
                 tabsValue.value = "origin";
             }
             descriptionTabRef.value?.syncBarPosition();
-        });
+        })
     },
     { immediate: true }
 );
@@ -147,7 +147,7 @@ watch(
 
 const supportedVersion = computed(() => {
     // 创建新数组避免直接修改原数组
-    const versions = [...(props.data?.supportedVersion || [])];
+    const versions = Array.isArray(props.data?.supportedVersion) ? [...props.data.supportedVersion] : [];
     // 使用本地化比较，专门处理版本号
     return versions.sort((a, b) => {
         const [aMajor, aMinor] = a.split('.').map(Number);
@@ -170,12 +170,12 @@ const handleDescriptionTabChange = (name: string) => {
     if (name === "auto" && !autoTranslateText.value) {
         autoTranslateLoading.value = true;
         autoTranslateTimeout.value = window.setTimeout(() => {
-            message.info("deepl翻译用时可能较长，尤其是在文本很长需要分段翻译的情况下，请耐心等待");
+            message.info("翻译用时可能较长，请耐心等待");
         }, 200); // 200ms后没反应说明cache miss，可能需要等待
         autoTranslate(description.value![1], 'auto', appConfig.$state.prefer_language)
             .then((res) => {
                 if (res.code === 200) {
-                    autoTranslatePreText.value = `由deepl自${res.source}翻译为${res.target}`
+                    autoTranslatePreText.value = `由llm自${res.source}翻译为${res.target}`
                     autoTranslateText.value = res.data;
                 } else {
                     autoTranslateText.value = `翻译失败：code: ${res.code}\nmessage: ${res.message}`;
@@ -253,6 +253,19 @@ const handleDescriptionTabChange = (name: string) => {
                         未找到/写死的中文/没有中文
                     </template>
                 </n-descriptions-item>
+                <n-descriptions-item label="状态">
+                    <Transition name="enabled-tag">
+                        <n-tag v-if="props.data?.enabled" size="small" round type="success">
+                            已启用
+                        </n-tag>
+                        <n-tag v-else size="small" round type="default">
+                            未启用
+                        </n-tag>
+                    </Transition>
+                    <!-- <n-tag size="small" round :type="data?.enabled ? 'success' : 'default'">
+                        {{ data?.enabled ? '已启用' : '未启用' }}
+                    </n-tag> -->
+                </n-descriptions-item>
             </n-descriptions>
             <n-tabs type="line" animated @update:value="handleDescriptionTabChange" ref="descriptionTabRef" 
                 v-model:value="tabsValue">
@@ -290,3 +303,21 @@ const handleDescriptionTabChange = (name: string) => {
         </n-scrollbar>
     </n-card>
 </template>
+
+<style scoped>
+.enabled-tag-enter-active,
+.enabled-tag-leave-active {
+  transition: all 0.25s ease-out;
+  position: absolute;
+}
+
+.enabled-tag-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+
+.enabled-tag-leave-to {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+</style>
