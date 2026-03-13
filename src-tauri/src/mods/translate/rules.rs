@@ -117,6 +117,12 @@ impl LanguagePackRules {
             None => Self::default(),
         }
     }
+    
+    pub fn get_lan(&self, language_code: &str) -> Option<&LanguagePackRule> {
+        self.rules
+            .iter()
+            .find(|rule| rule.language_code == language_code)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -163,6 +169,7 @@ pub struct IdentifyLanguageSupportRule {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MatchRule {
+    #[serde(default)]
     pub load_after_match: bool,
     pub threshold: f64,
     pub name: MatchRuleInner,

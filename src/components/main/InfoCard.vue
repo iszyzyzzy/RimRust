@@ -104,6 +104,7 @@ const calcMaxHeight = () => {
 }
 
 import { useMessage, type TabsInst } from 'naive-ui'
+import { max } from "lodash-es";
 
 let descriptionTabRef = ref<TabsInst | null>(null);
 
@@ -160,8 +161,17 @@ const supportedVersion = computed(() => {
     });
 });
 
+const isCompatible = (t: string) => {
+    return t === appConfig.game_version.split('.').splice(0, 2).join('.') || t === '*';
+}
+
 const descriptionsMaxWidth = ref({
-    maxWidth: `${(totalRef.value?.$el.offsetWidth - 48) / 2}px`,
+    maxWidth: `calc(18vw)`,
+});
+
+const descriptionsTextMaxWidth = ref({
+    //maxWidth: `${(totalRef.value?.$el.offsetWidth - 48) / 2}px`,
+    maxWidth: `calc(22vw - 48px)`,
 });
 
 const message = useMessage();
@@ -210,21 +220,21 @@ const handleDescriptionTabChange = (name: string) => {
         </template>
         <n-scrollbar :style="maxHeight">
             <n-descriptions :column="2" ref="descriptionsRef">
-                <n-descriptions-item label="原名" ><n-ellipsis :style="descriptionsMaxWidth">
+                <n-descriptions-item label="原名"><n-ellipsis :style="descriptionsTextMaxWidth">
                         <Highlight :text="props.data?.name" :patterns="props.highlightPattern" />
                     </n-ellipsis></n-descriptions-item>
-                <n-descriptions-item label="作者" ><n-ellipsis :style="descriptionsMaxWidth">
+                <n-descriptions-item label="作者"><n-ellipsis :style="descriptionsTextMaxWidth">
                         <Highlight :text="props.data?.author" :patterns="props.highlightPattern" />
                     </n-ellipsis></n-descriptions-item>
-                <n-descriptions-item label="packageId" ><n-ellipsis :style="descriptionsMaxWidth">
+                <n-descriptions-item label="packageId"><n-ellipsis :style="descriptionsTextMaxWidth">
                         <Highlight :text="props.data?.packageId" :patterns="props.highlightPattern" />
                     </n-ellipsis></n-descriptions-item>
                 <n-descriptions-item label="支持版本" >
                     <n-flex>
-                        <n-tag size="small" round v-for="version in supportedVersion" :key="version" :type="version ===
-                                appConfig.game_version.split('.').splice(0, 2).join('.')
-                                ? 'success'
-                                : 'default'" 
+                        <n-tag size="small" round v-for="version in supportedVersion" :key="version" :type="
+                                isCompatible(version)
+                                    ? 'success'
+                                    : 'default'" 
                                 :disabled="version !==
                                 appConfig.game_version.split('.').splice(0, 2).join('.')
                             ">{{ version }}

@@ -25,6 +25,7 @@ export const setEnableMod = (modIds: Id[], enabled: boolean, baseListStore: Base
     });
 
     console.log('setEnableMod', modIds, enabled, modChanges);
+    console.trace();
 
     baseListStore.handleModChanges(modChanges);
 

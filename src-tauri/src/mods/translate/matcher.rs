@@ -1,11 +1,11 @@
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use ahash::{HashSet, HashSetExt};
 use regex::Regex;
 use serde::Serialize;
 
 use crate::mods::ModInner;
 use crate::types::*;
 
-use super::rules::{CleanupPattern, MatchRule, MatchRuleCandidates, MatchRuleInner};
+use super::rules::{CleanupPattern, MatchRule, MatchRuleCandidates, MatchRuleCandidatesFilter, MatchRuleInner};
 
 struct CleanupPatterns {
     patterns: Vec<(Regex, String)>,
@@ -53,9 +53,77 @@ pub struct MatcherResult {
 
 pub struct Matcher {
     threshold: f64,
+    load_after_match: bool,
     name_matcher: NameMatcher,
     package_id_matcher: PackageIdMatcher,
     candidates_maker: CandidatesFilter,
+}
+
+impl Matcher {
+    pub fn new(rules: &MatchRule) -> Self {
+        // 创建默认的候选过滤器（不过滤）
+        let default_candidates = MatchRuleCandidates {
+            use_filter: false,
+            filter: MatchRuleCandidatesFilter {
+                load_after: false,
+                name_length_diff: 0.0,
+            },
+        };
+
+        Self {
+            threshold: rules.threshold,
+            load_after_match: rules.load_after_match,
+            name_matcher: NameMatcher::new(&rules.name),
+            package_id_matcher: PackageIdMatcher::new(&rules.package_id),
+            candidates_maker: CandidatesFilter::new(&default_candidates),
+        }
+    }
+
+    pub fn match_mod(&self, index: &ModIndex, target: &ModInner) -> Vec<(Id, f64)> {
+        // 先检查 load_after
+        if self.load_after_match {
+            if let Some(ids) = index.load_after_map.get(&target.package_id) {
+                if !ids.is_empty() {
+                    return ids.iter().map(|id| (id.clone(), 1.0)).collect();
+                }
+            }
+        }
+
+        let candidates = self.candidates_maker.filter(index, target);
+        let mut results = Vec::new();
+
+        for candidate in &candidates.0 {
+            let name_score = self.name_matcher.scoring(&target.name, &candidate.name);
+            let package_id_score = self.package_id_matcher.scoring(
+                &target.package_id.to_string(),
+                &candidate.package_id.to_string(),
+            );
+
+            let score = name_score.max(package_id_score);
+            if score >= self.threshold {
+                results.push((candidate.id.clone(), score));
+            }
+        }
+
+        // 按分数降序排序
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results
+    }
+
+    pub fn custom_calc(&self, source: &ModInner, target: &ModInner) -> MatcherResult {
+        let name_result = self.name_matcher.scoring_detail(&source.name, &target.name);
+        let package_id_result = self.package_id_matcher.scoring_detail(
+            &source.package_id.to_string(),
+            &target.package_id.to_string(),
+        );
+
+        let score = name_result.score.max(package_id_result.score);
+        let mut detail = Vec::new();
+        detail.push(("name".to_string(), name_result));
+        detail.push(("package_id".to_string(), package_id_result));
+
+        MatcherResult { score, detail }
+    }
 }
 
 struct NameMatcher {

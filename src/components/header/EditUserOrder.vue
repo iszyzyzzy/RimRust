@@ -28,7 +28,9 @@ watch(target, async (newVal) => {
         targetDataLoading.value = true
         abortController = new AbortController();
         try {
-            const res = await baseList.mods.findByPackageId(newVal, abortController.signal)
+            //const res = await baseList.mods.findByPackageId(newVal, abortController.signal)
+            // TODO 更新这里
+            const res: ModInner[] = []
             targetData.value = res
             targetDataLoading.value = false
         } catch (e: any) {
@@ -61,8 +63,10 @@ watch(data, async (newVal, oldVal) => {
             }
             dataAbortControllers.value[i] = new AbortController()
             try {
-                const packageId = 'Before' in current ? current.Before : current.After
-                const res = await baseList.mods.findByPackageId(packageId, dataAbortControllers.value[i].signal)
+                //const packageId = 'Before' in current ? current.Before : current.After
+                //const res = await baseList.mods.findByPackageId(packageId, dataAbortControllers.value[i].signal)
+                // TODO 更新这里
+                const res: ModInner[] = []
                 dataData.value[i] = res
                 dataLoading.value[i] = false
             } catch (e: any) {
@@ -116,20 +120,21 @@ const orderOptions = ref([
     }
 ])
 const handleOrderOptionsChange = (index: number, value: string) => {
-    switch(value) {
-        case 'First':
-            data.value[index] = { First: null }
-            break
-        case 'Last':
-            data.value[index] = { Last: null }
-            break
-        case 'Before':
-            data.value[index] = { Before: "" }
-            break
-        case 'After':
-            data.value[index] = { After: "" }
-            break
-    }
+    // TODO 这里
+    // switch(value) {
+    //     case 'First':
+    //         data.value[index] = { First: null }
+    //         break
+    //     case 'Last':
+    //         data.value[index] = { Last: null }
+    //         break
+    //     case 'Before':
+    //         data.value[index] = { Before: "" }
+    //         break
+    //     case 'After':
+    //         data.value[index] = { After: "" }
+    //         break
+    // }
 }
 </script>
 

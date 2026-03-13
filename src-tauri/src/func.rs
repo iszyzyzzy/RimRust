@@ -615,13 +615,61 @@ pub async fn translate(
             app_config_guard.llm_api_model.clone(),
         )
     };
-    let (cache, ongoing) = base_list
+    let (cache, ongoing, _) = base_list
         .translation_mod_data
         .lock(Priority::HIGH)
         .await
         .get_auto_translate_cache();
 
     crate::mods::auto_translate(text, from, to, proxy, api_entry_point, api_key, api_model, cache, ongoing).await
+}
+
+#[tauri::command]
+pub async fn translate_streaming(
+    text: String,
+    from: String,
+    to: String,
+    app_config: tauri::State<'_, Mutex<AppConfig>>,
+    base_list: tauri::State<'_, BaseList>,
+    on_event: tauri::ipc::Channel<crate::mods::AutoTranslateEvent>,
+) -> Result<(), String> {
+    info!(
+        text = ?text,
+        from = ?from,
+        to = ?to,
+        "前端请求流式翻译",
+    );
+    let (proxy, api_entry_point, api_key, api_model) = {
+        let app_config_guard = app_config.lock().await;
+        (
+            app_config_guard.proxy.clone(),
+            app_config_guard.llm_api_entry_point.clone(),
+            app_config_guard.llm_api_key.clone(),
+            app_config_guard.llm_api_model.clone(),
+        )
+    };
+    let (cache, ongoing, ongoing_streaming) = base_list
+        .translation_mod_data
+        .lock(Priority::HIGH)
+        .await
+        .get_auto_translate_cache();
+
+    crate::mods::auto_translate_streaming(
+        text,
+        from,
+        to,
+        proxy,
+        api_entry_point,
+        api_key,
+        api_model,
+        cache,
+        ongoing,
+        ongoing_streaming,
+        on_event,
+    )
+    .await;
+
+    Ok(())
 }
 
 #[tauri::command]

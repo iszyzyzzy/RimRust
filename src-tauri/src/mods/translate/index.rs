@@ -3,6 +3,7 @@ use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 
 use crate::{mods::{ModInner, ModOrder}, types::*};
 
+#[derive(Clone, bincode::Encode, bincode::Decode)]
 pub struct ModIndex {
     pub name_to_id: HashMap<String, Id>,
     pub id_to_name: HashMap<Id, String>,
@@ -10,6 +11,7 @@ pub struct ModIndex {
     pub id_to_package_id: HashMap<Id, PackageId>,
     pub id_to_author: HashMap<Id, String>,
     pub load_after_map: HashMap<PackageId, Vec<Id>>,
+    pub(super) change: bool,
     game_version: Version,
 }
 
@@ -22,6 +24,7 @@ impl ModIndex {
             id_to_package_id: HashMap::new(),
             id_to_author: HashMap::new(),
             load_after_map: HashMap::new(),
+            change: false,
             game_version: version,
         }
     }
@@ -47,6 +50,7 @@ impl ModIndex {
                     .push(id.clone());
             }
         }
+        self.change = true;
     }
 
     pub fn remove_mod(&mut self, id: Id) {
@@ -60,6 +64,7 @@ impl ModIndex {
         if let Some(package_id) = self.id_to_package_id.remove(&id) {
             self.load_after_map.remove(&package_id);
         }
+        self.change = true;
     }
 
     pub fn update_mod(&mut self, mod_: &ModInner) {
@@ -75,5 +80,9 @@ impl ModIndex {
 
     pub fn contains(&self, id: Id) -> bool {
         self.id_to_name.contains_key(&id)
+    }
+    
+    pub fn reset_change(&mut self) {
+        self.change = false;
     }
 }

@@ -3,12 +3,13 @@ import { Id, ModInner } from '../../../api/types';
 import ItemMod from './ItemMod.vue'
 import ItemGroup from './ItemGroup.vue'
 import { ComponentPublicInstance, computed, onMounted, onUnmounted, ref, watch, h, nextTick } from 'vue';
-import { useMessage, useThemeVars } from 'naive-ui'
+import { useMessage } from 'naive-ui'
 import { changeModDisplayOrder, refreshModsData, reorderModsByName, resetModOrder, searchMods } from '../../../api/tauriFunc';
 import VirtualList from '../../utils/components/VirtualList.vue';
 import type { DragCrossListPayload, DragEndPayload, VirtualListInst } from '../../utils/components/VirtualListInterface';
-import { useBaseListStore, useScrollTo } from '../../utils/store';
+import { useAppConfigStore, useBaseListStore, useScrollTo } from '../../utils/store';
 import { KeyboardArrowDownRound } from '@vicons/material';
+import buttonCheckbox from '@/components/utils/components/ButtonCheckbox.vue';
 
 type Item = ModInner
 const isMod = (item: Item): item is ModInner => {
@@ -16,12 +17,12 @@ const isMod = (item: Item): item is ModInner => {
 }
 
 const baseList = useBaseListStore()
+const appConfig = useAppConfigStore()
 const scrollTo = useScrollTo()
 const props = defineProps<{
     selected?: Id,
     title?: string,
     active?: boolean,
-    enabledOnly?: boolean,
     listId: number
 }>()
 const emit = defineEmits<{
@@ -56,17 +57,14 @@ const updateShowData = () => {
     let t: Item[] = []
         if (filterEnabled.value) {
             t = filterList.value.map((id) => baseList.getModById(id)!)
-            if (props.enabledOnly) {
-                t = t.filter((item) => item.enabled)
-            }
         } else {
-            t = baseList.getModOrderd.filter((item) => item.enabled || !props.enabledOnly)
+            t = baseList.getModOrderd
         }
-    //console.log("showData update",t)
+    console.log("showData update",t)
     showData.value = t
 }
 
-watch([filterEnabled, filterList, () => props.enabledOnly], () => {
+watch([filterEnabled, filterList], () => {
     updateShowData()
 }, { immediate: true })
 
@@ -275,6 +273,10 @@ onUnmounted(() => {
     window.removeEventListener('keydown', handleKeyEvents);
 });
 
+const isCompatible = (t: string) => {
+    return t === appConfig.game_version.split('.').splice(0, 2).join('.') || t === '*';
+}
+
 const titleOptions = ref([
     {
         type: 'double-check-button',
@@ -304,6 +306,26 @@ const titleOptions = ref([
                 message.error('刷新失败');
             })
         }
+    },
+    {
+        type: 'checkbox',
+        label: '仅显示当前游戏版本兼容的模组',
+        key: 'filterCompatible',
+        state: false,
+        handle: (value: boolean) => {
+            if (value) {
+                // filterList.value = Object.values(baseList.mods).filter((mod) => {
+                //     return mod.supportedVersion.some((version) => isCompatible(version))
+                // }).map((mod) => mod.id)
+                filterList.value = baseList.getModOrderd
+                    .filter((mod) => mod.supportedVersion.some((version) => isCompatible(version)))
+                    .map((mod) => mod.id)
+                filterEnabled.value = true
+            } else {
+                filterList.value = []
+                filterEnabled.value = false
+            }
+        }
     }
 ])
 
@@ -331,6 +353,7 @@ const titleOptions = ref([
                                 {{ option.doubleCheckText }}
                             </n-popconfirm>
                             <n-button v-else-if="option.type === 'button'" quaternary @click="option.handle">{{ option.label }}</n-button>
+                            <ButtonCheckbox v-else-if="option.type === 'checkbox'" :text="option.label" :handle-click="option.handle" v-model="option.state" />
                         </div>
                     </n-flex>
                 </n-popover>

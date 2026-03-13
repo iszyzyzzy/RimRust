@@ -37,6 +37,7 @@ pub struct BaseListForSave {
     pub user_custom_mods_order: HashMap<PackageId, HashSet<ModOrder>>,
     pub user_ignore_info: HashMap<Id, HashSet<super::scan::InfoType>>,
     pub translation_mod_data: HashMap<Id, super::TranslateModStatus>,
+    pub auto_translate_cache: Vec<(String, super::translate::AutoTranslateResult)>,
 }
 
 impl BaseList {
@@ -95,6 +96,7 @@ impl BaseList {
                 saved.translation_mod_data,
                 index,
             ).await;
+            translate.recover_auto_translate_cache(saved.auto_translate_cache);
             translate.overwrite_version(version);
         }
         {
@@ -205,6 +207,7 @@ impl BaseList {
         let user_ignore_info = self.user_ignore_info.iter().map(|item| (item.key().clone(),item.value().clone())).map(|(k,v)| (k,v.into_iter().collect())).collect();
         let translate = self.translation_mod_data.lock(priority).await;
         let translation_mod_data = translate.save_data();
+        let auto_translate_cache = translate.save_auto_translate_cache();
         drop(translate);
         BaseListForSave {
             mods,
@@ -214,6 +217,7 @@ impl BaseList {
             user_custom_mods_order,
             user_ignore_info,
             translation_mod_data,
+            auto_translate_cache,
         }
     }
     pub async fn save(&self, app_data_path: String) {

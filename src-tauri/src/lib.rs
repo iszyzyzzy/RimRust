@@ -211,6 +211,7 @@ pub fn run() {
             func::search_mod,
             func::steamdb_get_by_package_id,
             func::translate,
+            func::translate_streaming,
             func::save_mata_data_get,
             func::sort_set_user_custom_order,
             func::sort_remove_user_custom_order,

@@ -15,7 +15,7 @@ pub use search::{SearchField, SearchResult};
 pub use sort::SortResult;
 pub use storage::{BaseListForSave, ModsGroupForSave, SaveMetaData, load_save_meta_data};
 pub use community_data::SteamDbData;
-pub use translate::{auto_translate, AutoTranslateResult, CustomCalcResult, ModStatus as TranslateModStatus};
+pub use translate::{auto_translate, auto_translate_streaming, AutoTranslateResult, AutoTranslateEvent, CustomCalcResult, ModStatus as TranslateModStatus};
 
 pub type CommunityData = std::sync::Arc<crate::types::PriorityMutex<community_data::CommunityData>>;
 pub type SteamDb = std::sync::Arc<crate::types::PriorityMutex<community_data::SteamDb>>;

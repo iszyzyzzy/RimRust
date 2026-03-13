@@ -258,7 +258,7 @@ const handleKeyDown = () => {
 }
 
 const handleKeyEvents = (e: KeyboardEvent) => {
-    if (isItemSelected.value) {
+    if (props.active) {
         if (e.key === 'ArrowUp') {
             e.preventDefault()
             handleKeyUp()
